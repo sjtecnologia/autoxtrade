@@ -14,6 +14,19 @@ from trading.safety import ExposureBlocked, require_entry_mode
 
 
 class EntryApprovalService:
+    _CLAIM_SCRIPT = """
+    local raw = redis.call('GET', KEYS[1])
+    if not raw then return false end
+    local item = cjson.decode(raw)
+    if item.status ~= 'approved' then return false end
+    if item.expires_at and item.expires_at <= ARGV[2] then return false end
+    item.status = ARGV[1]
+    item.updated_at = ARGV[2]
+    local ttl = redis.call('TTL', KEYS[1])
+    if ttl <= 0 then return false end
+    redis.call('SETEX', KEYS[1], ttl, cjson.encode(item))
+    return cjson.encode(item)
+    """
     def __init__(self) -> None:
         self._redis = aioredis.from_url(settings.redis_url, decode_responses=True)
 
@@ -151,6 +164,11 @@ class EntryApprovalService:
 
         if new_status in {"approved", "executing"}:
             require_entry_mode(data.get("mode"))
+        if new_status == "executing":
+            raw = await self._redis.eval(
+                self._CLAIM_SCRIPT, 1, key, "executing", datetime.now(timezone.utc).isoformat()
+            )
+            return json.loads(raw) if raw else None
         data["status"] = new_status
         data["updated_at"] = datetime.now(timezone.utc).isoformat()
         await self._redis.setex(key, ttl, json.dumps(data, ensure_ascii=True))

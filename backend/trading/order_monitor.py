@@ -9,7 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import settings
 from db.models import Trade, TradeEvent
 from trading.connectors.base import BaseConnector
-from trading.connectors.types import OrderSide, OrderType
+from trading.connectors.types import OrderSide, OrderStatus, OrderType
+from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
@@ -70,32 +71,39 @@ class OrderMonitor:
             await self._close_at_market(trade, "orphan_no_stop")
 
     async def _close_at_market(self, trade: Trade, reason: str) -> None:
-        import datetime
         close_side = OrderSide.SELL if trade.side == "buy" else OrderSide.BUY
+        intent_id = uuid4().hex
         try:
             order = await self._conn.place_order(
                 symbol=trade.symbol,
                 side=close_side,
                 order_type=OrderType.MARKET,
                 amount=trade.quantity,
+                params={"intent_id": intent_id},
             )
-            exit_price = order.average or await self._conn.get_current_price(trade.symbol)
-        except Exception:
-            exit_price = await self._conn.get_current_price(trade.symbol)
-
-        side_mult = Decimal("1") if trade.side == "buy" else Decimal("-1")
-        pnl_net = (exit_price - trade.entry_price) * trade.quantity * side_mult
-
-        trade.status = "closed"
-        trade.exit_price = exit_price
-        trade.close_at = datetime.datetime.now(datetime.timezone.utc)
-        trade.close_reason = reason
-        trade.pnl_net = pnl_net.quantize(Decimal("0.01"))
-        self._db.add(TradeEvent(
-            trade=trade,
-            event_type="MANUAL_CLOSE",
-            payload={"reason": reason},
-        ))
+            confirmed = (order.raw.get("intent_id") == intent_id
+                         and order.status == OrderStatus.CLOSED
+                         and order.filled == trade.quantity
+                         and order.average is not None)
+            if not confirmed:
+                state = "UNKNOWN" if order.status == OrderStatus.UNKNOWN else "REJECTED_OR_PARTIAL"
+                self._db.add(TradeEvent(
+                    trade=trade, event_type="CLOSE_FAILED" if state != "UNKNOWN" else "CLOSE_PENDING",
+                    payload={"reason": reason, "intent_id": intent_id, "state": state,
+                             "order_id": order.id, "filled": str(order.filled)},
+                ))
+            else:
+                self._db.add(TradeEvent(
+                    trade=trade, event_type="CLOSE_CONFIRMED",
+                    payload={"reason": reason, "intent_id": intent_id, "order_id": order.id},
+                ))
+                from trading.order_executor import OrderExecutor
+                OrderExecutor(self._conn, self._db)._finalize_trade(trade, order.average, reason, order.id)
+        except Exception as exc:
+            self._db.add(TradeEvent(
+                trade=trade, event_type="CLOSE_FAILED",
+                payload={"reason": reason, "intent_id": intent_id, "error": str(exc)},
+            ))
         await self._db.commit()
 
     async def handle_order_update(self, event: dict) -> None:

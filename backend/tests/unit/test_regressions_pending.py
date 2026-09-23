@@ -20,7 +20,6 @@ def make_trade():
                  entry_value=D("100"), stop_loss=D("95"), open_at=datetime.now(timezone.utc))
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="F02 / etapa 02: fallback fecha somente no banco")
 async def test_failed_protection_cannot_claim_close_without_execution():
     from trading.order_executor import OrderExecutor
     conn = AsyncMock()
@@ -34,6 +33,112 @@ async def test_failed_protection_cannot_claim_close_without_execution():
     trade = make_trade()
     await executor._send_stop_market_or_close(trade, "TEST", OrderSide.SELL, D("1"), D("95"))
     assert trade.status == "open", "No confirmed closing order; preserve unresolved exposure"
+
+
+def _forex_context():
+    from trading.contracts import Capability, ExecutionContext, ExecutionMode, Instrument
+    return ExecutionContext(
+        venue="mt5", broker="dwx", account_id="paper-forex", nature=AccountNature.SIMULATED,
+        verified=True, mode=ExecutionMode.PAPER, market="FOREX", account_currency="USD",
+        position_model="hedging", instrument=Instrument(
+            symbol="TEST", asset_class="forex", base_currency="EUR", quote_currency="USD",
+            contract_size=D("1"), tick_size=D("0.01"), tick_value=D("1"), tick_currency="USD",
+            min_volume=D("0.1"), max_volume=D("10"), volume_step=D("0.1"),
+            price_precision=2, volume_precision=1, margin_model="isolated", margin_rate=D("0.1")),
+        capabilities=frozenset(Capability),
+    )
+
+
+@pytest.mark.asyncio
+async def test_timeout_is_unknown_and_never_resent():
+    from trading.connectors.memory_transport import MemoryTransport
+    from trading.connectors.simulated import SimulatedConnector
+    from trading.order_executor import OrderExecutionError, OrderExecutor
+
+    context = _forex_context()
+    transport = MemoryTransport(context)
+    transport.prices["TEST"] = D("100")
+    transport.scenarios["timeout-intent"] = "timeout"
+    conn = SimulatedConnector(context, transport=transport)
+    db = AsyncMock()
+    db.add = MagicMock()
+    with pytest.raises(OrderExecutionError, match="reconciliation"):
+        await OrderExecutor(conn, db).open_position(
+            "TEST", OrderSide.BUY, D("1"), D("100"), D("95"), intent_id="timeout-intent")
+    assert list(transport.intents) == ["timeout-intent"]
+    assert transport.results["timeout-intent"].state.value == "unknown"
+
+
+@pytest.mark.asyncio
+async def test_partial_fill_records_only_confirmed_quantity():
+    from trading.connectors.memory_transport import MemoryTransport
+    from trading.connectors.simulated import SimulatedConnector
+    from trading.order_executor import OrderExecutionError, OrderExecutor
+
+    context = _forex_context()
+    transport = MemoryTransport(context)
+    transport.prices["TEST"] = D("100")
+    transport.scenarios["partial-intent"] = D("0.4")
+    conn = SimulatedConnector(context, transport=transport)
+    db = AsyncMock()
+    db.add = MagicMock()
+    with pytest.raises(OrderExecutionError, match="partially filled"):
+        await OrderExecutor(conn, db).open_position(
+            "TEST", OrderSide.BUY, D("1"), D("100"), D("95"), intent_id="partial-intent")
+    partial_trade = next(item for item in db.add.call_args_list if getattr(item.args[0], "status", None) == "partial")
+    assert partial_trade.args[0].quantity == D("0.4")
+
+
+@pytest.mark.asyncio
+async def test_forex_trade_uses_connector_context_only():
+    from trading.connectors.memory_transport import MemoryTransport
+    from trading.connectors.simulated import SimulatedConnector
+    from trading.order_executor import OrderExecutor
+
+    context = _forex_context()
+    transport = MemoryTransport(context)
+    transport.prices["TEST"] = D("100")
+    conn = SimulatedConnector(context, transport=transport)
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.refresh = AsyncMock()
+    trade = await OrderExecutor(conn, db).open_position(
+        "TEST", OrderSide.BUY, D("1"), D("100"), D("95"), market="FOREX")
+    assert (trade.mode, trade.exchange, trade.market, trade.account_id) == (
+        "paper", "mt5", "FOREX", "paper-forex")
+    assert trade.mode != "live" and trade.exchange != "binance"
+
+
+@pytest.mark.asyncio
+async def test_approval_claim_is_single_consumer():
+    import asyncio
+    from trading.approval_service import EntryApprovalService
+
+    class AtomicRedis:
+        def __init__(self):
+            self.item = {"id": "approval-1", "status": "approved", "mode": "paper",
+                         "expires_at": "2999-01-01T00:00:00+00:00"}
+            self.claims = 0
+
+        async def ttl(self, key): return 60
+        async def get(self, key):
+            import json
+            return json.dumps(self.item)
+        async def eval(self, script, count, key, status, now):
+            import json
+            if self.item["status"] != "approved": return None
+            self.item["status"] = status
+            self.claims += 1
+            return json.dumps(self.item)
+
+    svc = object.__new__(EntryApprovalService)
+    svc._redis = AtomicRedis()
+    results = await asyncio.gather(
+        svc.update_entry_status("approval-1", "executing"),
+        svc.update_entry_status("approval-1", "executing"),
+    )
+    assert sum(result is not None for result in results) == 1
+    assert svc._redis.claims == 1
 
 
 @pytest.mark.xfail(strict=True, raises=AssertionError, reason="F03 / etapa 03: OCO DWX abre ordem oposta")

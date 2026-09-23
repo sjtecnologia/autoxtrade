@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Trade, TradeEvent
 from trading.connectors.base import BaseConnector
-from trading.connectors.types import OrderSide, OrderType
+from trading.connectors.types import OrderSide, OrderStatus, OrderType
 from trading.safety import require_new_exposure, require_position_management
 from trading.contracts import Capability, ExecutionContext, OrderIntent, ResultState
 from uuid import uuid4
@@ -66,6 +66,16 @@ class OrderExecutor:
         # 1. Ordem de entrada (market)
         entry_order = await self._conn.create_order(OrderIntent(
             intent_id or uuid4().hex, bound, side, OrderType.MARKET, quantity))
+        if entry_order.state == ResultState.PARTIAL:
+            self._record_partial_entry(entry_order, bound, symbol, side, quantity, stop_loss,
+                                       take_profit, model_version, ml_confidence)
+            await self._db.commit()
+            raise OrderExecutionError("Entry partially filled; reconciliation required")
+        if entry_order.state == ResultState.UNKNOWN:
+            self._record_unknown_entry(entry_order, bound, symbol, side, quantity, entry_price,
+                                       stop_loss, take_profit, model_version, ml_confidence)
+            await self._db.commit()
+            raise OrderExecutionError("Entry acceptance unknown; reconciliation required")
         if (entry_order.state != ResultState.CONFIRMED or entry_order.filled != quantity
                 or not entry_order.position_id or entry_order.average is None):
             raise OrderExecutionError(f"Entry not fully confirmed: {entry_order.state.value}; reconciliation required")
@@ -127,8 +137,25 @@ class OrderExecutor:
         if (trade.execution_context != context.snapshot() or not trade.position_id
                 or trade.account_id != context.account_id or trade.mode != context.mode.value):
             raise OrderExecutionError("Position identity unresolved or belongs to another account")
-        close_order = await self._conn.reduce_position(trade.position_id, trade.quantity, intent_id=uuid4().hex)
+        close_intent_id = uuid4().hex
+        try:
+            close_order = await self._conn.reduce_position(
+                trade.position_id, trade.quantity, intent_id=close_intent_id)
+        except Exception as exc:
+            self._db.add(TradeEvent(
+                trade=trade, event_type="CLOSE_FAILED",
+                payload={"reason": reason, "intent_id": close_intent_id, "error": str(exc)},
+            ))
+            await self._db.commit()
+            raise OrderExecutionError("Close not confirmed; reconciliation required") from exc
         if close_order.state != ResultState.CONFIRMED or close_order.filled != trade.quantity or close_order.average is None:
+            event_type = "CLOSE_PENDING" if close_order.state == ResultState.UNKNOWN else "CLOSE_FAILED"
+            self._db.add(TradeEvent(
+                trade=trade, event_type=event_type,
+                payload={"reason": reason, "intent_id": close_intent_id,
+                         "state": close_order.state.value, "filled": str(close_order.filled)},
+            ))
+            await self._db.commit()
             raise OrderExecutionError("Close not confirmed; reconciliation required")
         exit_price = close_order.average
 
@@ -215,6 +242,7 @@ class OrderExecutor:
         stop_loss: Decimal,
         oco_error: str | None = None,
     ) -> None:
+        intent_id = uuid4().hex
         try:
             stop_order = await self._conn.place_order(
                 symbol=symbol,
@@ -222,22 +250,39 @@ class OrderExecutor:
                 order_type=OrderType.STOP_MARKET,
                 amount=quantity,
                 price=stop_loss,
+                params={"intent_id": intent_id},
             )
+            order_intent = stop_order.raw.get("intent_id") if stop_order.raw else None
+            if order_intent != intent_id:
+                raise OrderExecutionError("Stop order identity mismatch")
+            if stop_order.status == OrderStatus.UNKNOWN:
+                event_type = "CLOSE_PENDING"
+                reason = "Stop order acceptance is unknown; reconciliation required"
+            elif stop_order.status == OrderStatus.PARTIAL or stop_order.filled != quantity:
+                event_type = "PARTIAL_FILL"
+                reason = "Stop order partially filled; reconciliation required"
+            elif stop_order.status in (OrderStatus.REJECTED, OrderStatus.CANCELED):
+                event_type = "CLOSE_FAILED"
+                reason = f"Stop order {stop_order.status.value}"
+            else:
+                event_type = "OCO_FAILED"
+                reason = None
             self._db.add(TradeEvent(
                 trade=trade,
-                event_type="OCO_FAILED",
-                payload={"oco_error": oco_error, "fallback": "stop_market", "order_id": stop_order.id},
+                event_type=event_type,
+                payload={"oco_error": oco_error, "fallback": "stop_market", "order_id": stop_order.id,
+                         "intent_id": intent_id, "reason": reason},
             ))
             await self._db.commit()
-            logger.warning("[executor] Stop-market fallback configurado para trade #%d", trade.id)
+            if event_type == "CLOSE_FAILED":
+                raise OrderExecutionError(reason)
+            logger.warning("[executor] Stop-market fallback registrado para trade #%d", trade.id)
         except Exception as exc2:
-            logger.critical("[executor] Stop-market FALHOU para trade #%d: %s — fechando a mercado", trade.id, exc2)
-            current_price = await self._conn.get_current_price(symbol)
-            self._finalize_trade(trade, current_price, "DD_LIMIT_CLOSE")
+            logger.critical("[executor] Stop-market FALHOU para trade #%d: %s", trade.id, exc2)
             self._db.add(TradeEvent(
                 trade=trade,
-                event_type="OCO_FAILED",
-                payload={"oco_error": oco_error, "stop_error": str(exc2), "fallback": "market_close"},
+                event_type="CLOSE_FAILED",
+                payload={"oco_error": oco_error, "stop_error": str(exc2), "intent_id": intent_id},
             ))
             await self._db.commit()
             # Notificação de emergência
@@ -247,6 +292,54 @@ class OrderExecutor:
                 await telegram.send_emergency_alert(format_oco_failed(trade, oco_error or str(exc2)))
             except Exception:
                 pass
+
+    def _record_partial_entry(self, result, context, symbol, side, requested_quantity,
+                              stop_loss, take_profit, model_version, ml_confidence) -> None:
+        import datetime
+
+        if result.filled <= 0 or result.average is None or not result.position_id:
+            return
+        trade = Trade(
+            market=context.market, exchange=context.venue, symbol=symbol, side=side.value,
+            status="partial", mode=context.mode.value, account_id=context.account_id,
+            account_nature=context.nature.value, instrument_class=context.instrument.asset_class,
+            position_id=result.position_id, execution_context=context.snapshot(), identity_status="bound",
+            entry_price=result.average, quantity=result.filled,
+            entry_value=(result.average * result.filled).quantize(Decimal("0.01")),
+            stop_loss=stop_loss, take_profit=take_profit,
+            open_at=datetime.datetime.now(datetime.timezone.utc), open_order_id=result.order_id,
+            model_version=model_version, ml_confidence=ml_confidence,
+        )
+        self._db.add(trade)
+        self._db.add(TradeEvent(
+            trade=trade, event_type="PARTIAL_FILL",
+            payload={"intent_id": result.intent_id, "order_id": result.order_id,
+                     "requested": str(requested_quantity), "filled": str(result.filled)},
+        ))
+
+    def _record_unknown_entry(self, result, context, symbol, side, requested_quantity,
+                              requested_price, stop_loss, take_profit, model_version,
+                              ml_confidence) -> None:
+        import datetime
+
+        filled = result.filled if result.filled > 0 else Decimal("0")
+        average = result.average or requested_price
+        trade = Trade(
+            market=context.market, exchange=context.venue, symbol=symbol, side=side.value,
+            status="pending", mode=context.mode.value, account_id=context.account_id,
+            account_nature=context.nature.value, instrument_class=context.instrument.asset_class,
+            position_id=result.position_id, execution_context=context.snapshot(), identity_status="bound",
+            entry_price=average, quantity=filled,
+            entry_value=(average * filled).quantize(Decimal("0.01")), stop_loss=stop_loss,
+            take_profit=take_profit, open_at=datetime.datetime.now(datetime.timezone.utc),
+            open_order_id=result.order_id, model_version=model_version, ml_confidence=ml_confidence,
+        )
+        self._db.add(trade)
+        self._db.add(TradeEvent(
+            trade=trade, event_type="ORDER_UNKNOWN",
+            payload={"intent_id": result.intent_id, "order_id": result.order_id,
+                     "requested": str(requested_quantity), "filled": str(filled)},
+        ))
 
     def _finalize_trade(
         self,
