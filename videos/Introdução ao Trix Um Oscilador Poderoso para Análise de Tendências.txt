@@ -1,0 +1,27 @@
+Introdução ao Trix: Um Oscilador Poderoso para Análise de Tendências
+
+[0:00:03] Speaker 1: Vamos lá, pessoal. Agora a gente vai falar do Trix, é um outro oscilador, um operador do cacete, muito legal. Eu considero muitíssimas vezes melhor do que MACD, que é um gráfico super conhecido, super utilizado. Eu prefiro muito mais o Trix. Para mim, ele se mostrou muito melhor. E quero aqui só lembrar vocês que o nome do gráfico é MACD. Se você escutar o cara falando MACD, meu irmão, desafasta, porque o cara joga nas duas.
+
+Desafasta. MACD, não, MACD. Sacanagem. Vamos lá, pessoal. Vamos botar o Trix aqui pra gente poder falar dele. Bom, a primeira coisa que eu vou falar pra vocês, vocês devem perceber, a gente botando o Trix de Estocástico, que o Trix é muito mais suave. Ele não é bicudo, aquela ponta feito um Estocástico. Parece que alguém meteu a lima nos fundos e nos topos do Trix. Parece que deram a serradinha ali nos bicos.
+
+As arestas que tinham fora. Porque o Trix é suavizado através de médias móveis exponenciais, então ele tem esse outro desenho diferente. Diferente do Estocástico, ele tem o nível do zero, mas ele não tem limite nem pra cima nem pra baixo. Uma coisa que eu gosto de fazer no Trix, é muitas vezes dar umas pixadas assim e ver qual é o nível, mais ou menos, onde ele tende sempre a estar revertendo. Nesses momentos, eu já vou prestar uma atenção melhor no Trix.
+
+Claro que tem essas saídas fora da curva, mas nós temos, de uma maneira geral, dá pra você ver que tem um range onde ele costuma oscilar pra aquele papel. Então esse cara aqui, obviamente, ele é a linha azul e a linha amarela é uma média móvel que eu coloco aqui pra operar junto. Pra mesma coisa, pra eu poder dizer: "Olha, agora cruzou, agora é venda, agora é compra". Então adicionei aqui uma média móvel, o Trix eu uso 9 com 4 de média móvel aritmética.
+
+A partir da hora, cara, que você percebe que você calibrando o gráfico, você empurra a linha pra onde você quer, você não precisa nem saber qual é o cálculo daquela linha. Você só precisa conseguir, através do teorema de Cartesio ou de Schop, empurrar a linha pra ela ficar no lugar que você quer pra ter o corte da outra. Só isso. Então muitas vezes, a exponencial, você não vai fazer diferença nenhuma, porque com a calibragem você resolve tudo isso.
+
+Você tira a distorção. Eu uso média aritmética, que eu acho mais fácil. Característica do Trix: ele é mão forte. Ele é um ótimo indicador de reversão de tendência. Por quê? Ele segura o mercado. O que eu quero mostrar pra vocês falando é de mão forte. Eu vou até aqui aumentar o tempo gráfico pra gente ter mais situações como essa. Olha, por exemplo, se a gente for olhar aqui esse pedacinho, eu vou aumentar pra ficar mais fácil.
+
+Repara que ele fez uma compra aqui, a azul passou pra cima da amarela, então é compra. E aí ele veio, olha lá. E aí, de repente, ele começou a emborcar. Percebe? Que ele começou a cair. O que ele queria? Ele queria vir pra cá, cortar pra fazer uma venda. E o Trix falou: "Não". E aí fomos de novo. Aí de novo ele quis emborcar. E ele falou: "Não", segurou o mercado. E aí, lá em cima é que ele deixou o mercado estar invertendo.
+
+Repara que ele tentou fazer uma compra aqui, o Trix não deixou, teve que arregar aqui, algumas vezes ele falha. Nada é perfeito. Mas ele é um indicador que funciona muito bem. E ele é macho, ele é tipo aquele cara que ele vai lá, ele mete uma venda e aí o mercado começa a cair um pouquinho e ele está vendido, ele vende um pouco mais e aí o mercado começa a subir e ele vende mais. E tudo que eu estou falando de venda e compra, é o vale de compra e venda.
+
+E ele vende mais, o mercado sobe mais um pouco, ele vende mais. Você fala: "Pô, esse desgraçado está vendendo porque o dinheiro é meu, não é dele. Porque essa porra só está subindo, eu estou sendo enrabado aqui". Não é verdade? Daqui a pouco, meu irmão, tenha paciência. Porque daqui a pouco o mercado mete a cara. Ele é o mão forte. O que é o mão forte no mercado? Existe uma diferença entre o mão forte e o trouxa.
+
+O mão forte é o cara que segurou o trade, mesmo com alguma adversidade no meio do caminho, mas ganhou dinheiro. Quando você segurou o trade no meio do caminho e perdeu dinheiro, você é o trouxa, você é o perdedor. Mas a noção de mão forte e mão fraca é muito importante no mercado pra você ver quem é capaz de ter nervos de aço pra muitas vezes estar passando por alguns momentos que você não queria estar passando.
+
+Mas você continuar, segurar tua posição e no final ser ganhador. E o mão fraca é aquele cara, qualquer oscilaçãozinha no mercado, o cara pá, sai fora. Lembrando sempre que tudo tem limite pra você estar segurando posição. No mercado, tem um ditado muito claro, que é o seguinte: no mercado, tem duas coisas que crescem na mão. Uma é unha, a outra é pica. Então quando vocês forem ficar segurando posição demais, pensa bem.
+
+Bom, então esse Trix aqui é um cara muito legal. Ele segura a operação. Vamos dar uma olhadinha nele funcionando junto com o mercado. Olha lá. A venda dele lá onde foi. Olha lá, que bacana. Não foi do topo, mas foi muito boa. A compra dele onde é que foi? Não foi do topo, mas foi muito boa. Venda, etc e tal. Nós não vamos usá-lo sozinho, nós não vamos usá-lo pra operar, porque eu não opero sem tendência.
+
+Mas ele vai ser um dos sinais, que a gente já já vai estar falando disso. Cara poderoso, que a gente tem que ter no nosso esquema, doutor Trix. Paramos por aí e vamos agora falar de Bandas de Bollinger. Próxima aula.

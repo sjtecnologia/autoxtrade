@@ -1,0 +1,37 @@
+FFFF.                                                                    [100%]
+================================== FAILURES ===================================
+_________ test_failed_protection_cannot_claim_close_without_execution _________
+backend\tests\unit\test_regressions_pending.py:36: in test_failed_protection_cannot_claim_close_without_execution
+    assert trade.status == "open", "No confirmed closing order; preserve unresolved exposure"
+E   AssertionError: No confirmed closing order; preserve unresolved exposure
+E   assert 'closed' == 'open'
+E     
+E     - open
+E     + closed
+------------------------------ Captured log call ------------------------------
+CRITICAL trading.order_executor:order_executor.py:215 [executor] Stop-market FALHOU para trade #1: simulated rejection � fechando a mercado
+______________ test_dwx_protection_must_not_open_opposite_order _______________
+backend\tests\unit\test_regressions_pending.py:47: in test_dwx_protection_must_not_open_opposite_order
+    conn.place_order.assert_not_awaited()
+unittest\mock.py:2378: in assert_not_awaited
+    ???
+E   AssertionError: Expected mock to not have been awaited. Awaited 1 times.
+____________________ test_risk_must_use_sizer_and_drawdown ____________________
+backend\tests\unit\test_regressions_pending.py:66: in test_risk_must_use_sizer_and_drawdown
+    assert result.position_size.quantity == sizing.quantity
+E   AssertionError: assert Decimal('1') == Decimal('0.25')
+E    +  where Decimal('1') = PositionSizeResult(quantity=Decimal('1'), risk_amount=Decimal('100'), risk_pct=Decimal('1.0'), entry_price=Decimal('100'), stop_loss_price=Decimal('80'), stop_distance_pct=Decimal('1.0'), position_value=Decimal('100.00')).quantity
+E    +    where PositionSizeResult(quantity=Decimal('1'), risk_amount=Decimal('100'), risk_pct=Decimal('1.0'), entry_price=Decimal('100'), stop_loss_price=Decimal('80'), stop_distance_pct=Decimal('1.0'), position_value=Decimal('100.00')) = RiskCheckResult(approved=True, reason=None, position_size=PositionSizeResult(quantity=Decimal('1'), risk_amount=Decima...ice=Decimal('100'), stop_loss_price=Decimal('80'), stop_distance_pct=Decimal('1.0'), position_value=Decimal('100.00'))).position_size
+E    +  and   Decimal('0.25') = namespace(quantity=Decimal('0.25'), risk_amount=Decimal('5'), risk_pct=Decimal('1')).quantity
+__________________ test_didi_rejects_bad_validation_metrics ___________________
+backend\tests\unit\test_regressions_pending.py:88: in test_didi_rejects_bad_validation_metrics
+    assert result.approved is False, "Performance gates must reject losing/empty validation"
+E   AssertionError: Performance gates must reject losing/empty validation
+E   assert True is False
+E    +  where True = TrainingResult(approved=True, version='rf_cripto_TEST_USDT_1h_didi_20260922_2246', symbol='TEST/USDT', timeframe='1h',... train_end=datetime.datetime(2024, 1, 5, 3, 0, tzinfo=datetime.timezone.utc), train_samples=100, rejection_reason=None).approved
+=========================== short test summary info ===========================
+FAILED backend\tests\unit\test_regressions_pending.py::test_failed_protection_cannot_claim_close_without_execution
+FAILED backend\tests\unit\test_regressions_pending.py::test_dwx_protection_must_not_open_opposite_order
+FAILED backend\tests\unit\test_regressions_pending.py::test_risk_must_use_sizer_and_drawdown
+FAILED backend\tests\unit\test_regressions_pending.py::test_didi_rejects_bad_validation_metrics
+4 failed, 1 passed in 3.14s
