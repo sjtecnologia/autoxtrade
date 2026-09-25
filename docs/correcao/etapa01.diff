@@ -1,0 +1,926 @@
+--- a/backend/config.py
++++ b/backend/config.py
+@@ -13,6 +13,7 @@
+     # App
+     app_version: str = "0.1.0"
+     app_env: str = "development"
++    real_new_exposure_enabled: bool = False
+ 
+     # Auth
+     api_secret_token: str = Field(..., description="Bearer token para autenticação da API")
+--- a/backend/api/routes/approvals.py
++++ b/backend/api/routes/approvals.py
+@@ -10,6 +10,7 @@
+ 
+ from api.auth import verify_token
+ from trading.approval_service import EntryApprovalService
++from trading.safety import ExposureBlocked
+ 
+ router = APIRouter(prefix="/approvals", tags=["approvals"])
+ 
+@@ -164,6 +165,8 @@
+             if updated is None:
+                 raise HTTPException(status_code=404, detail="Aprovacao nao encontrada ou expirada")
+         data = await svc.update_entry_status(approval_id, "approved")
++    except ExposureBlocked as exc:
++        raise HTTPException(status_code=409, detail=str(exc)) from exc
+     finally:
+         await svc.close()
+ 
+--- a/backend/tasks/trading_tasks.py
++++ b/backend/tasks/trading_tasks.py
+@@ -16,6 +16,20 @@
+ from celery import shared_task
+ 
+ logger = logging.getLogger(__name__)
++
++
++async def _require_approved_entry(db, market: str, mode: str) -> None:
++    """Recheck pause and mode at execution, not only when the signal was created."""
++    from sqlalchemy import select
++    from db.models import BotConfig
++    from trading.safety import ExposureBlocked, require_entry_mode
++    require_entry_mode(mode)
++    result = await db.execute(select(BotConfig).where(BotConfig.market == market))
++    config = result.scalar_one_or_none()
++    if config is None or not config.is_active or config.drawdown_status == "PAUSED":
++        raise ExposureBlocked("New entries paused or market not configured")
++    if config.mode != mode:
++        raise ExposureBlocked("Approval mode no longer matches market configuration")
+ 
+ 
+ def _demo_trade_plan(symbol: str, market: str) -> tuple[OrderSide, Decimal, Decimal, Decimal | None, Decimal]:
+@@ -337,7 +351,7 @@
+             try:
+                 market = str(item["market"])
+                 symbol = str(item["symbol"])
+-                mode = str(item.get("mode") or "paper")
++                mode = str(item.get("mode") or "unknown")
+                 side = OrderSide.BUY if item["side"] == "buy" else OrderSide.SELL
+                 qty = Decimal(str(item["quantity"]))
+                 entry_price = Decimal(str(item["entry_price"]))
+@@ -345,6 +359,7 @@
+                 take_profit = Decimal(str(item["take_profit"]))
+ 
+                 async with Session() as db:
++                    await _require_approved_entry(db, market, mode)
+                     existing = await db.execute(
+                         select(Trade).where(
+                             Trade.market == market,
+@@ -373,7 +388,7 @@
+                         finally:
+                             await trader.shutdown()
+                     else:
+-                        connector = get_connector(market)
++                        connector = get_connector(market, mode=mode)
+                         await connector.connect()
+                         try:
+                             executor = OrderExecutor(connector, db)
+@@ -474,13 +489,9 @@
+                     finally:
+                         await trader.shutdown()
+                 else:
+-                    connector = get_connector(trade.market)
+-                    await connector.connect()
+-                    try:
+-                        executor = OrderExecutor(connector, db)
+-                        await executor.close_position(trade, reason="DIDI_EXIT")
+-                    finally:
+-                        await _close_connector(connector)
++                    # Keep monitoring other positions. Never claim a real close or
++                    # silently resolve it to paper while management is unvalidated.
++                    logger.error("[safety] Real close blocked for trade %s: management adapter unvalidated", trade.id)
+     finally:
+         await redis_client.aclose()
+         await engine.dispose()
+--- a/backend/tests/conftest.py
++++ b/backend/tests/conftest.py
+@@ -0,0 +1,111 @@
++"""Isolation is installed before test collection (including import-time effects)."""
++import ipaddress
++import os
++from pathlib import Path
++import socket
++import sys
++import tempfile
++from contextvars import ContextVar
++
++import pytest
++
++_ROOT = Path(tempfile.mkdtemp(prefix="autoxtrade-tests-" )).resolve()
++_violations = []
++_socketpair_setup = ContextVar("socketpair_setup", default=False)
++_original_socketpair = socket.socketpair
++
++
++def _local_socketpair(*args, **kwargs):
++    token = _socketpair_setup.set(True)
++    try:
++        return _original_socketpair(*args, **kwargs)
++    finally:
++        _socketpair_setup.reset(token)
++
++
++socket.socketpair = _local_socketpair
++
++
++def _deny(message):
++    _violations.append(message)
++    raise RuntimeError(message)
++
++
++def _audit(event, args):
++    if event in {"socket.connect", "socket.sendto"}:
++        address = args[-1]
++        # No implicit permission for localhost databases/Redis either.
++        allowed = os.environ.get("AUTOXTRADE_TEST_ENDPOINTS", "").split(",")
++        if isinstance(address, tuple):
++            host, port = address[:2]
++            try:
++                local = ipaddress.ip_address(host).is_loopback
++            except ValueError:
++                local = False
++            if local and _socketpair_setup.get():
++                return  # asyncio's private Windows wakeup pair, not a service
++            if local and f"{host}:{port}" in allowed:
++                return
++        _deny("Test attempted network access outside explicit local test endpoints")
++    if event == "socket.getaddrinfo":
++        host = args[0]
++        if host not in ("localhost", "127.0.0.1", "::1", None):
++            _deny("Test attempted external DNS")
++    path_events = {"open", "os.listdir", "os.scandir", "os.mkdir", "os.remove", "os.rmdir", "os.rename"}
++    if event in path_events and isinstance(args[0], (str, bytes, os.PathLike)):
++        path = Path(os.fsdecode(args[0])).resolve()
++        if path.name == ".env" or path.name.startswith(".env.") and path.name != ".env.example":
++            _deny("Test attempted to read environment secrets")
++        operational = any(p.lower() in {"dwx", "mql5"} for p in path.parts) or path.name.startswith("DWX_")
++        if operational and not path.is_relative_to(_ROOT):
++            _deny("Test attempted operational DWX access")
++        if event == "open" and path.suffix.lower() in {".pkl", ".pickle", ".joblib"} and not path.is_relative_to(_ROOT):
++            _deny("Test attempted untrusted model access")
++    if event in {"subprocess.Popen", "os.system"}:
++        # CCXT's bundled toolz probes its version using this read-only command.
++        if event == "subprocess.Popen" and args[1] in (
++            "git rev-parse --git-dir", "git.cmd rev-parse --git-dir", "git.exe rev-parse --git-dir",
++            ["git", "rev-parse", "--git-dir"], ["git.cmd", "rev-parse", "--git-dir"],
++        ):
++            return
++        _deny("Test attempted a subprocess outside the isolation boundary")
++
++
++sys.addaudithook(_audit)
++
++# Do not let process environment or .env provide credentials to collected modules.
++import pydantic_settings
++pydantic_settings.BaseSettings.model_config["env_file"] = None
++os.environ.update({
++    "API_SECRET_TOKEN": "test-only-token",
++    "DATABASE_URL": "postgresql+asyncpg://test:test@127.0.0.1:15432/autoxtrade_test",
++    "DATABASE_URL_SYNC": "postgresql://test:test@127.0.0.1:15432/autoxtrade_test",
++    "REDIS_URL": "redis://127.0.0.1:16379/15",
++    "CELERY_BROKER_URL": "memory://", "CELERY_RESULT_BACKEND": "cache+memory://",
++    "BINANCE_API_KEY": "", "BINANCE_API_SECRET": "", "BINANCE_PAPER_MODE": "true",
++    "TELEGRAM_BOT_TOKEN": "", "TELEGRAM_CHAT_ID": "",
++    "MT5_FILES_DIR": str(_ROOT / "mt5"), "REAL_NEW_EXPOSURE_ENABLED": "false",
++})
++# Patch the dotenv source itself: Settings overrides BaseSettings.model_config.
++from pydantic_settings.sources import DotEnvSettingsSource
++DotEnvSettingsSource._read_env_files = lambda self: {}
++
++
++def pytest_configure(config):
++    config.option.basetemp = str(_ROOT / "pytest")
++
++
++@pytest.fixture(autouse=True)
++def enforce_isolation(monkeypatch):
++    previous_count = len(_violations)
++    from telegram import Bot
++    async def forbidden(*args, **kwargs):
++        _deny("Test attempted Telegram transport")
++    monkeypatch.setattr(Bot, "_post", forbidden)
++    yield
++    assert len(_violations) == previous_count, "Isolation violations (even if swallowed): " + repr(_violations[previous_count:])
++
++
++def pytest_sessionfinish(session, exitstatus):
++    if _violations:
++        session.exitstatus = 1
+--- a/backend/tests/isolation_canaries.py
++++ b/backend/tests/isolation_canaries.py
+@@ -0,0 +1,31 @@
++"""Intentional failures; run explicitly to verify the isolation harness.
++
++These are not part of normal test discovery. Each must fail in teardown even
++when application code catches the transport exception.
++"""
++import socket
++from pathlib import Path
++
++
++def test_external_network_is_rejected():
++    with socket.socket() as sock:
++        try:
++            sock.connect(("203.0.113.1", 443))
++        except RuntimeError:
++            pass
++
++
++def test_operational_dwx_is_rejected():
++    try:
++        (Path.cwd() / "MQL5" / "Files" / "DWX" / "DWX_Commands_0.txt").write_text("forbidden")
++    except RuntimeError:
++        pass
++
++
++async def test_telegram_transport_is_rejected():
++    from telegram import Bot
++    bot = Bot("12345:fake-test-token")
++    try:
++        await bot.send_message(chat_id="fake", text="forbidden")
++    except RuntimeError:
++        pass
+--- a/backend/tests/unit/test_order_executor.py
++++ b/backend/tests/unit/test_order_executor.py
+@@ -31,6 +31,8 @@
+ @pytest.fixture
+ def mock_connector():
+     conn = AsyncMock()
++    from trading.safety import AccountNature
++    conn.account_nature = AccountNature.SIMULATED
+     conn.place_order = AsyncMock(return_value=_make_order())
+     conn.place_oco_order = AsyncMock(return_value=_make_order(id="oco1"))
+     conn.get_open_orders = AsyncMock(return_value=[])
+--- a/backend/tests/unit/test_regressions_pending.py
++++ b/backend/tests/unit/test_regressions_pending.py
+@@ -0,0 +1,95 @@
++"""Executable acceptance criteria. Strict xfail tracks unresolved stage defects.
++
++Run with --runxfail to reproduce the failures without expected-failure masking.
++"""
++from datetime import datetime, timezone
++from decimal import Decimal as D
++from types import SimpleNamespace
++from unittest.mock import AsyncMock, MagicMock
++
++import pytest
++
++from db.models import Trade
++from trading.connectors.types import OrderSide, OrderType
++from trading.safety import AccountNature
++
++
++def make_trade():
++    return Trade(id=1, market="FOREX", exchange="fake", symbol="TEST", side="buy",
++                 mode="live", status="open", quantity=D("1"), entry_price=D("100"),
++                 entry_value=D("100"), stop_loss=D("95"), open_at=datetime.now(timezone.utc))
++
++
++@pytest.mark.xfail(strict=True, raises=AssertionError, reason="F02 / etapa 02: fallback fecha somente no banco")
++async def test_failed_protection_cannot_claim_close_without_execution():
++    from trading.order_executor import OrderExecutor
++    conn = AsyncMock()
++    conn.account_nature = AccountNature.SIMULATED
++    conn.place_order.side_effect = RuntimeError("simulated rejection")
++    conn.get_current_price.return_value = D("100")
++    db = AsyncMock()
++    db.add = MagicMock()
++    executor = OrderExecutor(conn, db)
++    executor._telegram = AsyncMock()
++    trade = make_trade()
++    await executor._send_stop_market_or_close(trade, "TEST", OrderSide.SELL, D("1"), D("95"))
++    assert trade.status == "open", "No confirmed closing order; preserve unresolved exposure"
++
++
++@pytest.mark.xfail(strict=True, raises=AssertionError, reason="F03 / etapa 03: OCO DWX abre ordem oposta")
++async def test_dwx_protection_must_not_open_opposite_order(tmp_path):
++    from trading.connectors.dwx import DWXConnector
++    conn = DWXConnector(str(tmp_path))
++    # Explicit fake transport/account allows exercising the quarantined algorithm.
++    conn.account_nature = AccountNature.SIMULATED
++    conn.place_order = AsyncMock()
++    await conn.place_oco_order("TEST", OrderSide.SELL, D("1"), D("110"), D("95"), D("94"))
++    conn.place_order.assert_not_awaited()
++
++
++@pytest.mark.xfail(strict=True, raises=AssertionError, reason="F04 / etapa 04: sizing fixo, sizer não chamado")
++async def test_risk_must_use_sizer_and_drawdown():
++    from risk.manager import RiskManager
++    db = AsyncMock()
++    config = SimpleNamespace(is_active=True, drawdown_status="OK", max_open_trades=3,
++                             mode="paper", max_corr_threshold=D("0.7"))
++    cfg_result, trades_result = MagicMock(), MagicMock()
++    cfg_result.scalar_one_or_none.return_value = config
++    trades_result.scalars.return_value.all.return_value = []
++    db.execute.side_effect = [cfg_result, trades_result]
++    sizer, drawdown, correlation = MagicMock(), AsyncMock(), AsyncMock()
++    sizing = SimpleNamespace(quantity=D("0.25"), risk_amount=D("5"), risk_pct=D("1"))
++    sizer.calculate.return_value = sizing
++    correlation.check.return_value = SimpleNamespace(blocked=False)
++    result = await RiskManager(db, sizer, drawdown, correlation).can_open_position(
++        "FOREX", "TEST", D("100"), D("80"))
++    assert result.position_size.quantity == sizing.quantity
++    sizer.calculate.assert_called_once()
++
++
++@pytest.mark.xfail(strict=True, raises=AssertionError, reason="F05 / etapa 06: DiDi aprova folds reprovados")
++async def test_didi_rejects_bad_validation_metrics(monkeypatch):
++    import pandas as pd
++    from ml.trainer import ModelTrainer
++    from ml.data_collector import DataCollector
++    from ml.feature_engineer import FeatureEngineer
++    df = pd.DataFrame({"timestamp": pd.date_range("2024-01-01", periods=100, freq="h", tz="UTC"),
++                       "close": [100.] * 100, "target": [0, 1] * 50})
++    monkeypatch.setattr(DataCollector, "load_parquet", lambda *a: df.copy())
++    monkeypatch.setattr(FeatureEngineer, "calculate_features", lambda self, data: data)
++    trainer = ModelTrainer()
++    monkeypatch.setattr(trainer, "_calculate_didi_target", lambda data: data)
++    bad_fold = SimpleNamespace(profit_factor=0., win_rate=0., expectancy_pct=-5.,
++                               max_drawdown_pct=90., total_trades=0)
++    monkeypatch.setattr(trainer, "_walk_forward_cv", lambda *a, **kw: [bad_fold])
++    monkeypatch.setattr(trainer, "_train_final_model", lambda *a: (None, None))
++    monkeypatch.setattr(trainer, "_save_model_files", lambda *a: ("fake-model", "fake-scaler"))
++    result = await trainer.train("TEST/USDT", profile="didi")
++    assert result.approved is False, "Performance gates must reject losing/empty validation"
++
++
++def test_factory_binance_constructor_contract():
++    from trading.connectors.factory import get_connector
++    from trading.connectors.simulated import SimulatedConnector
++    # Previously raised TypeError; safe default now creates a credential-free adapter.
++    assert isinstance(get_connector("CRIPTO", force_new=True), SimulatedConnector)
+--- a/backend/tests/unit/test_safety.py
++++ b/backend/tests/unit/test_safety.py
+@@ -0,0 +1,184 @@
++from decimal import Decimal
++from types import SimpleNamespace
++from unittest.mock import AsyncMock, MagicMock
++
++import pytest
++
++from config import settings
++from trading.safety import (
++    AccountNature, ExposureBlocked, require_entry_mode, require_new_exposure,
++    require_position_management,
++)
++from trading.connectors.factory import get_connector, _create
++from trading.connectors.simulated import SimulatedConnector
++from trading.connectors.dwx import DWXConnector
++from trading.connectors.types import OrderSide, OrderType
++from trading.order_executor import OrderExecutor
++
++
++@pytest.mark.parametrize("enabled", [False, True])
++@pytest.mark.parametrize("nature", [AccountNature.UNKNOWN, AccountNature.REAL, AccountNature.DEMO])
++def test_no_unvalidated_account_can_open(enabled, nature, monkeypatch):
++    monkeypatch.setattr(settings, "real_new_exposure_enabled", enabled)
++    with pytest.raises(ExposureBlocked):
++        require_new_exposure(SimpleNamespace(account_nature=nature))
++
++
++def test_default_disabled():
++    from config import Settings
++    assert Settings.model_fields["real_new_exposure_enabled"].default is False
++
++
++@pytest.mark.parametrize("mode", ["live", "demo", "PAPER", "", None])
++def test_invalid_or_real_mode_blocked(mode):
++    with pytest.raises(ExposureBlocked):
++        require_entry_mode(mode)
++
++
++@pytest.mark.parametrize("market", ["CRIPTO", "B3", "FOREX"])
++def test_factory_paper_is_always_simulated(market, monkeypatch):
++    monkeypatch.setattr(settings, "binance_paper_mode", False)
++    assert isinstance(get_connector(market, force_new=True), SimulatedConnector)
++    assert isinstance(_create(market), SimulatedConnector)
++    with pytest.raises(ExposureBlocked):
++        get_connector(market, mode="live")  # cached paper cannot satisfy live
++    with pytest.raises(ExposureBlocked):
++        _create(market, mode="live")
++
++
++async def test_direct_executor_blocks_before_send_or_persistence():
++    conn, db = AsyncMock(), AsyncMock()
++    conn.account_nature = AccountNature.UNKNOWN
++    with pytest.raises(ExposureBlocked):
++        await OrderExecutor(conn, db).open_position(
++            "EURUSD", OrderSide.BUY, Decimal("1"), Decimal("100"), Decimal("95"))
++    conn.place_order.assert_not_called()
++    db.commit.assert_not_called()
++
++
++@pytest.mark.parametrize("command", ["OPEN_ORDER", "CLOSE_ORDER", "CLOSE_ALL_ORDERS", "MODIFY_ORDER", "CUSTOM"])
++def test_dwx_low_level_mutations_blocked(tmp_path, command):
++    conn = DWXConnector(str(tmp_path))
++    with pytest.raises(ExposureBlocked):
++        conn._write_command(command, "arbitrary")
++    assert list(tmp_path.iterdir()) == []
++    assert conn.account_nature is AccountNature.UNKNOWN
++
++
++async def test_dwx_direct_methods_blocked(tmp_path):
++    conn = DWXConnector(str(tmp_path))
++    with pytest.raises(ExposureBlocked):
++        await conn.place_order("EURUSD", OrderSide.BUY, OrderType.MARKET, Decimal("1"))
++    with pytest.raises(ExposureBlocked):
++        await conn.place_oco_order("EURUSD", OrderSide.SELL, *[Decimal("1")] * 4)
++    with pytest.raises(ExposureBlocked):
++        await conn.cancel_order("1", "EURUSD")
++    assert list(tmp_path.iterdir()) == []
++
++
++async def test_binance_direct_methods_blocked():
++    from trading.connectors.binance import BinanceConnector
++    conn = object.__new__(BinanceConnector)
++    conn._exchange = AsyncMock()
++    with pytest.raises(ExposureBlocked):
++        await conn.place_order("BTC/USDT", OrderSide.BUY, OrderType.MARKET, Decimal("1"))
++    with pytest.raises(ExposureBlocked):
++        await conn.place_oco_order("BTC/USDT", OrderSide.SELL, *[Decimal("1")] * 4)
++    conn._exchange.create_order.assert_not_called()
++
++
++async def test_approval_service_blocks_live_before_status_write():
++    from trading.approval_service import EntryApprovalService
++    svc = object.__new__(EntryApprovalService)
++    svc._redis = AsyncMock()
++    svc._redis.ttl.return_value = 60
++    svc.get_entry = AsyncMock(return_value={"mode": "live", "status": "pending"})
++    for status in ("approved", "executing"):
++        with pytest.raises(ExposureBlocked):
++            await svc.update_entry_status("id", status)
++    svc._redis.setex.assert_not_called()
++
++
++async def test_manual_approval_returns_conflict(monkeypatch):
++    from fastapi import HTTPException
++    from api.routes import approvals
++    svc = AsyncMock()
++    svc.update_entry_status.side_effect = ExposureBlocked("disabled")
++    monkeypatch.setattr(approvals, "EntryApprovalService", lambda: svc)
++    with pytest.raises(HTTPException) as error:
++        await approvals.approve_entry("id", approvals.EntryApprovalRequest(), "test")
++    assert error.value.status_code == 409
++    svc.close.assert_awaited_once()
++
++
++@pytest.mark.parametrize("active,dd,mode", [(False,"OK","paper"), (True,"PAUSED","paper"), (True,"OK","live")])
++async def test_queued_entry_rechecks_pause_and_mode(active, dd, mode):
++    from tasks.trading_tasks import _require_approved_entry
++    db = AsyncMock()
++    db.execute.return_value = MagicMock()
++    db.execute.return_value.scalar_one_or_none.return_value = SimpleNamespace(
++        is_active=active, drawdown_status=dd, mode=mode)
++    with pytest.raises(ExposureBlocked):
++        await _require_approved_entry(db, "FOREX", "paper")
++
++
++async def test_simulated_management_independent_of_entry_block():
++    conn = SimulatedConnector()
++    conn.prices["TEST"] = Decimal("100")
++    require_position_management(conn)
++    stop = await conn.place_order("TEST", OrderSide.SELL, OrderType.STOP_MARKET, Decimal("1"), Decimal("95"))
++    assert await conn.get_open_orders("TEST") == [stop]
++    assert await conn.cancel_order(stop.id, "TEST") is True
++    with pytest.raises(ExposureBlocked):
++        require_position_management(SimpleNamespace(account_nature=AccountNature.REAL))
++
++
++def test_dwx_files_only_in_temporary_directory(tmp_path):
++    directory = tmp_path / "DWX"
++    directory.mkdir()
++    conn = DWXConnector(str(tmp_path))
++    conn._write_command("SUBSCRIBE_SYMBOLS", "TEST")
++    assert "SUBSCRIBE_SYMBOLS|TEST" in (directory / "DWX_Commands_0.txt").read_text()
++
++
++async def test_monitor_runs_without_active_scanner_and_does_not_close_real(monkeypatch):
++    import pandas as pd
++    import redis.asyncio as redis
++    import sqlalchemy.ext.asyncio as sa
++    from tasks import trading_tasks
++    from trading import didi_strategy
++    from trading.paper_trader import PaperTrader
++    from notifications.telegram import notifier
++    from trading.connectors import factory
++    trades = [SimpleNamespace(id=i, mode=mode, market="FOREX", symbol="TEST", side="buy",
++                              entry_price=Decimal("100"), stop_loss=Decimal("95"))
++              for i, mode in [(1, "live"), (2, "paper")]]
++    db = AsyncMock()
++    result = MagicMock()
++    result.scalars.return_value.all.return_value = trades
++    db.execute.return_value = result
++    session = MagicMock()
++    session.return_value.__aenter__.return_value = db
++    engine = AsyncMock()
++    monkeypatch.setattr(sa, "create_async_engine", lambda *a, **kw: engine)
++    monkeypatch.setattr(sa, "async_sessionmaker", lambda *a, **kw: session)
++    cache = AsyncMock()
++    cache.get.return_value = None
++    monkeypatch.setattr(redis, "from_url", lambda *a, **kw: cache)
++    monkeypatch.setattr(trading_tasks, "_load_ohlcv", lambda *a: pd.DataFrame({"close": [100] * 80}))
++    monkeypatch.setattr(didi_strategy, "evaluate_safe_break", lambda **kw: SimpleNamespace(should_move=False))
++    monkeypatch.setattr(didi_strategy, "evaluate_exit", lambda *a: SimpleNamespace(should_exit=True, criteria={}, details={}))
++    monkeypatch.setattr(notifier, "send_message", AsyncMock())
++    import notifications.templates as templates
++    monkeypatch.setattr(templates, "format_exit_signal_alert", lambda *a: "fake exit")
++    closed = AsyncMock()
++    monkeypatch.setattr(PaperTrader, "_close_position", closed)
++    broker = MagicMock(side_effect=AssertionError("Financial adapter must not be used"))
++    monkeypatch.setattr(factory, "get_connector", broker)
++    monkeypatch.setattr(settings, "didi_exit_auto_close", True)
++    await trading_tasks._monitor_open_positions_async()
++    closed.assert_awaited_once_with(trades[1], Decimal("100"), "DIDI_EXIT")
++    broker.assert_not_called()
++    query = str(db.execute.call_args.args[0])
++    assert "bot_config" not in query  # open positions, independent of scanner pause
++    assert "trades.status" in query
+--- a/backend/trading/approval_service.py
++++ b/backend/trading/approval_service.py
+@@ -10,6 +10,7 @@
+ import redis.asyncio as aioredis
+ 
+ from config import settings
++from trading.safety import ExposureBlocked, require_entry_mode
+ 
+ 
+ class EntryApprovalService:
+@@ -148,6 +149,8 @@
+         if not data:
+             return None
+ 
++        if new_status in {"approved", "executing"}:
++            require_entry_mode(data.get("mode"))
+         data["status"] = new_status
+         data["updated_at"] = datetime.now(timezone.utc).isoformat()
+         await self._redis.setex(key, ttl, json.dumps(data, ensure_ascii=True))
+@@ -160,7 +163,11 @@
+             item_id = item.get("id")
+             if not item_id:
+                 continue
+-            updated = await self.update_entry_status(item_id, "executing")
++            try:
++                updated = await self.update_entry_status(item_id, "executing")
++            except ExposureBlocked as exc:
++                await self.mark_entry_failed(item_id, str(exc))
++                continue
+             if updated:
+                 result.append(updated)
+         return result
+--- a/backend/trading/order_executor.py
++++ b/backend/trading/order_executor.py
+@@ -7,6 +7,7 @@
+ from db.models import Trade, TradeEvent
+ from trading.connectors.base import BaseConnector
+ from trading.connectors.types import OrderSide, OrderType
++from trading.safety import require_new_exposure, require_position_management
+ 
+ logger = logging.getLogger(__name__)
+ 
+@@ -44,6 +45,7 @@
+     ) -> Trade:
+         """Abre posição: envia ordem de entrada e OCO de proteção."""
+         self._validate_stops(side, entry_price, stop_loss, take_profit)
++        require_new_exposure(self._conn)
+ 
+         import datetime
+ 
+@@ -92,6 +94,7 @@
+ 
+     async def close_position(self, trade: Trade, reason: str = "manual") -> Trade:
+         """Cancela OCO e fecha posição a mercado."""
++        require_position_management(self._conn)
+         import datetime
+ 
+         close_side = OrderSide.SELL if trade.side == "buy" else OrderSide.BUY
+--- a/backend/trading/safety.py
++++ b/backend/trading/safety.py
+@@ -0,0 +1,40 @@
++"""Fail-closed execution policy. No broker capability is validated in stage 01."""
++from enum import Enum
++
++
++class AccountNature(str, Enum):
++    SIMULATED = "simulated"
++    DEMO = "demo"
++    REAL = "real"
++    UNKNOWN = "unknown"
++
++
++class ExposureBlocked(RuntimeError):
++    pass
++
++
++def require_entry_mode(mode: str) -> None:
++    if mode == "paper":
++        return
++    if mode != "live":
++        raise ExposureBlocked("Unknown execution mode; entry blocked")
++    from config import settings
++    if not settings.real_new_exposure_enabled:
++        raise ExposureBlocked("New real exposure is disabled")
++    # A flag alone cannot certify account identity, fills, sizing or protection.
++    raise ExposureBlocked("Live execution capability is not validated (stages 02-09)")
++
++
++def require_new_exposure(connector) -> None:
++    nature = getattr(connector, "account_nature", AccountNature.UNKNOWN)
++    if nature is AccountNature.SIMULATED:
++        return
++    if nature is AccountNature.UNKNOWN:
++        raise ExposureBlocked("Unknown account nature; entry blocked")
++    require_entry_mode("live")
++
++
++def require_position_management(connector) -> None:
++    """Independent of entry pause; real mutations await a validated ticket contract."""
++    if getattr(connector, "account_nature", None) is not AccountNature.SIMULATED:
++        raise ExposureBlocked("Broker position management is not validated; no real mutation authorized")
+--- a/backend/trading/connectors/base.py
++++ b/backend/trading/connectors/base.py
+@@ -3,10 +3,13 @@
+ from decimal import Decimal
+ 
+ from trading.connectors.types import Balance, OHLCVCandle, Order, OrderSide, OrderType
++from trading.safety import AccountNature
+ 
+ 
+ class BaseConnector(ABC):
+     """Contrato que todos os connectors devem implementar."""
++
++    account_nature = AccountNature.UNKNOWN
+ 
+     @abstractmethod
+     async def connect(self) -> None:
+--- a/backend/trading/connectors/binance.py
++++ b/backend/trading/connectors/binance.py
+@@ -9,6 +9,7 @@
+ import redis.asyncio as aioredis
+ 
+ from config import settings
++from trading.safety import AccountNature, require_new_exposure, require_position_management
+ from trading.connectors.base import BaseConnector
+ from trading.connectors.types import (
+     Balance,
+@@ -52,6 +53,8 @@
+ class BinanceConnector(BaseConnector):
+     """Connector de produção para Binance usando CCXT."""
+ 
++    account_nature = AccountNature.REAL
++
+     def __init__(self) -> None:
+         options = {"defaultType": "spot"}
+         self._exchange = ccxt.binance(
+@@ -132,6 +135,7 @@
+         price: Decimal | None = None,
+         params: dict | None = None,
+     ) -> Order:
++        require_new_exposure(self)
+         raw = await self._with_retry(
+             lambda: self._exchange.create_order(
+                 symbol=symbol,
+@@ -153,6 +157,7 @@
+         stop_price: Decimal,
+         stop_limit_price: Decimal,
+     ) -> Order:
++        require_new_exposure(self)
+         raw = await self._with_retry(
+             lambda: self._exchange.create_order(
+                 symbol=symbol,
+@@ -170,6 +175,7 @@
+         return _parse_order(raw)
+ 
+     async def cancel_order(self, order_id: str, symbol: str) -> bool:
++        require_position_management(self)
+         try:
+             await self._with_retry(
+                 lambda: self._exchange.cancel_order(order_id, symbol)
+--- a/backend/trading/connectors/dwx.py
++++ b/backend/trading/connectors/dwx.py
+@@ -26,6 +26,7 @@
+ from typing import Any
+ 
+ from trading.connectors.base import BaseConnector
++from trading.safety import require_new_exposure, require_position_management
+ from trading.connectors.types import (
+     Balance,
+     OHLCVCandle,
+@@ -213,6 +214,7 @@
+         price: Decimal | None = None,
+         params: dict | None = None,
+     ) -> Order:
++        require_new_exposure(self)
+         params = params or {}
+         order_type_str = self._map_order_type(side, order_type)
+         price_val = float(price) if price else 0
+@@ -260,6 +262,7 @@
+         stop_price: Decimal,
+         stop_limit_price: Decimal,
+     ) -> Order:
++        require_new_exposure(self)
+         return await self.place_order(
+             symbol=symbol,
+             side=side,
+@@ -272,6 +275,7 @@
+         )
+ 
+     async def cancel_order(self, order_id: str, symbol: str) -> bool:
++        require_position_management(self)
+         if self._order_event:
+             self._order_event.clear()
+         self._write_command("CLOSE_ORDER", f"{order_id},0")
+@@ -347,6 +351,11 @@
+                 print_exc()
+ 
+     def _write_command(self, command: str, content: str) -> None:
++        # Guard the low-level bypass too. Unknown commands never reach the EA.
++        if command == "OPEN_ORDER":
++            require_new_exposure(self)
++        elif command not in {"GET_HISTORIC_DATA", "SUBSCRIBE_SYMBOLS", "RESET_COMMAND_IDS"}:
++            require_position_management(self)
+         with self._lock:
+             self._cmd_id = (self._cmd_id + 1) % 100_000
+             end_time = time.monotonic() + self._max_retry
+--- a/backend/trading/connectors/factory.py
++++ b/backend/trading/connectors/factory.py
+@@ -1,24 +1,25 @@
+ """
+-Factory de connectors — retorna a instância correta para cada mercado.
++Factory de execução — paper sempre usa simulador local; live fica bloqueado.
+ 
+ Uso:
+     from trading.connectors.factory import get_connector
+-    connector = get_connector("FOREX")   # → DWXConnector
+-    connector = get_connector("CRIPTO")  # → BinanceConnector
++    connector = get_connector("FOREX")   # → SimulatedConnector
++    connector = get_connector("CRIPTO", mode="live")  # → ExposureBlocked
+ """
+ from __future__ import annotations
+ 
+ import logging
+ 
+ from trading.connectors.base import BaseConnector
++from trading.safety import require_entry_mode
+ 
+ logger = logging.getLogger(__name__)
+ 
+-# Cache de instâncias (singleton por mercado)
++# Cache de instâncias por mercado e modo (sem reutilização cruzada).
+ _instances: dict[str, BaseConnector] = {}
+ 
+ 
+-def get_connector(market: str, force_new: bool = False) -> BaseConnector:
++def get_connector(market: str, force_new: bool = False, *, mode: str = "paper") -> BaseConnector:
+     """
+     Retorna o connector adequado para o mercado.
+ 
+@@ -26,30 +27,34 @@
+         market     — "CRIPTO", "B3" ou "FOREX"
+         force_new  — descarta cache e cria nova instância
+ 
+-    Suporte atual:
+-        CRIPTO → BinanceConnector
+-        B3     → DWXConnector (MT5 via ZeroMQ)
+-        FOREX  → DWXConnector (MT5 via ZeroMQ)
++    Etapa 01: paper retorna SimulatedConnector em todos os mercados.
++    Os adaptadores Binance/DWX (arquivos) aguardam validação para live.
+     """
+-    key = market.upper()
++    market = market.upper()
++    if market not in {"CRIPTO", "B3", "FOREX"}:
++        raise ValueError(f"Mercado desconhecido: {market!r}")
++    require_entry_mode(mode)
++    key = f"{market}:{mode}"
+     if not force_new and key in _instances:
+         return _instances[key]
+ 
+-    connector = _create(key)
++    connector = _create(market, mode=mode)
+     _instances[key] = connector
+     return connector
+ 
+ 
+-def _create(market: str) -> BaseConnector:
++def _create(market: str, *, mode: str = "paper") -> BaseConnector:
++    if market not in {"CRIPTO", "B3", "FOREX"}:
++        raise ValueError(f"Mercado desconhecido: {market!r}")
++    require_entry_mode(mode)
++    if mode == "paper":
++        from trading.connectors.simulated import SimulatedConnector
++        return SimulatedConnector()
+     if market == "CRIPTO":
+         from config import settings
+         from trading.connectors.binance import BinanceConnector
+ 
+-        return BinanceConnector(
+-            api_key=settings.binance_api_key,
+-            api_secret=settings.binance_api_secret,
+-            paper_mode=settings.binance_paper_mode,
+-        )
++        return BinanceConnector()
+ 
+     if market in ("B3", "FOREX"):
+         from config import settings
+--- a/backend/trading/connectors/simulated.py
++++ b/backend/trading/connectors/simulated.py
+@@ -0,0 +1,57 @@
++"""In-memory execution adapter. Never imports a broker or reads credentials."""
++from decimal import Decimal
++from trading.connectors.base import BaseConnector
++from trading.connectors.types import Order, OrderSide, OrderType, OrderStatus
++from trading.safety import AccountNature
++
++
++class SimulatedConnector(BaseConnector):
++    account_nature = AccountNature.SIMULATED
++
++    def __init__(self):
++        self.prices: dict[str, Decimal] = {}
++        self.orders: dict[str, Order] = {}
++
++    async def connect(self):
++        pass
++
++    async def close(self):
++        pass
++
++    async def get_balance(self):
++        return {}
++
++    async def get_ohlcv(self, symbol, timeframe="5m", limit=200):
++        return []
++
++    async def get_current_price(self, symbol):
++        if symbol not in self.prices:
++            raise ValueError("Supply an explicit simulated price")
++        return self.prices[symbol]
++
++    async def place_order(self, symbol, side, order_type, amount, price=None, params=None):
++        if amount <= 0:
++            raise ValueError("Quantity must be positive")
++        market = order_type == OrderType.MARKET
++        execution_price = await self.get_current_price(symbol) if market else price
++        order = Order(str(len(self.orders) + 1), symbol, side, order_type,
++                      OrderStatus.CLOSED if market else OrderStatus.OPEN,
++                      amount, price, execution_price if market else None,
++                      amount if market else Decimal("0"),
++                      Decimal("0") if market else amount, None, {"simulated": True})
++        self.orders[order.id] = order
++        return order
++
++    async def place_oco_order(self, symbol, side, amount, take_profit_price, stop_price, stop_limit_price):
++        return await self.place_order(symbol, side, OrderType.OCO, amount, stop_price)
++
++    async def cancel_order(self, order_id, symbol):
++        order = self.orders[order_id]
++        if order.symbol != symbol or order.status != OrderStatus.OPEN:
++            return False
++        order.status = OrderStatus.CANCELED
++        return True
++
++    async def get_open_orders(self, symbol=None):
++        return [o for o in self.orders.values() if o.status == OrderStatus.OPEN
++                and (symbol is None or o.symbol == symbol)]
+--- a/backend/trading/connectors/__init__.py
++++ b/backend/trading/connectors/__init__.py
+@@ -1,6 +1,4 @@
+-from trading.connectors.binance import BinanceConnector
+ from trading.connectors.base import BaseConnector
+-from trading.connectors.dwx import DWXConnector
+ from trading.connectors.factory import get_connector
+ from trading.connectors.types import (
+     Balance,
+@@ -10,6 +8,17 @@
+     OrderStatus,
+     OrderType,
+ )
++
++
++def __getattr__(name):
++    # Paper execution must not import/initialize an operational broker adapter.
++    if name == "BinanceConnector":
++        from trading.connectors.binance import BinanceConnector
++        return BinanceConnector
++    if name == "DWXConnector":
++        from trading.connectors.dwx import DWXConnector
++        return DWXConnector
++    raise AttributeError(name)
+ 
+ __all__ = [
+     "BaseConnector",
+--- a/.gitignore
++++ b/.gitignore
+@@ -82,3 +82,6 @@
+ 
+ # TypeScript
+ *.tsbuildinfo
++
++# Isolated stage-01 runtime and pre-change source snapshot
++.correcao-runtime/
+--- a/.env.example
++++ b/.env.example
+@@ -81,0 +82,2 @@
++# Stage 01: flag alone does not enable unvalidated broker capabilities.
++REAL_NEW_EXPOSURE_ENABLED=false

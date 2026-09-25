@@ -1,0 +1,63 @@
+Estabilizacao da suite - validacao macOS
+Data: 2026-09-25
+
+Escopo desta rodada
+- Corrigido apenas o ambiente de testes e os testes de contrato seguro ja esperados pela estabilizacao.
+- backend/trading/safety.py permaneceu intacto.
+- Nenhuma mudanca em backend/trading, backend/tasks ou backend/db foi feita nesta rodada.
+- Nenhuma corretora, ordem externa, Telegram, commit, push ou deploy foi acionado.
+
+Ambiente
+- Checkout validado: /Users/renato/Documents/Developement/autoxtrade 2
+- Python: backend/.venv/bin/python
+- Remoto git: nenhum remoto configurado (`git remote -v` nao retornou URLs).
+- Conclusao sobre checkout: este checkout macOS nao confirma apontar para sjtecnologia/autoxtrade; tratar como copia separada ate configurar/verificar o remoto do checkout Windows Z:\autoxtrade.
+
+Correcoes aplicadas
+1. backend/tests/conftest.py
+   - Allowlist de subprocess.Popen ampliada somente para sondagens git read-only de versao: rev-parse --git-dir e git describe.
+   - O harness continua fail-closed: os.system e demais subprocess.Popen continuam negados por _deny.
+   - Corrigida a resolucao de paths relativos com dir_fd no macOS para evitar falso positivo durante shutil.rmtree dentro de _ROOT.
+2. backend/tests/unit/test_safety.py
+   - O teste DWX limpa sincronamente o diretorio temporario antes do teardown.
+   - Resultado final do arquivo: 31 passed.
+3. backend/requirements.txt
+   - ccxt fixado em ccxt==4.3.1.
+4. backend/tests/unit/test_regressions_pending.py
+   - Teste F02/F03 alinhado ao contrato seguro atual: mercado sem ExecutionContext e bloqueado; contexto explicito retorna SimulatedConnector.
+
+Execucoes obrigatorias
+1. .venv/bin/python -m pytest tests/ -q -rx --tb=short
+   Resultado final:
+   - 110 passed, 3 xfailed, 1 warning in 10.27s
+   - XFAIL tests/unit/test_data_collector.py::test_detecta_gap_pequeno - F12 / etapa 05: gap pequeno nao preenchido
+   - XFAIL tests/unit/test_regressions_pending.py::test_risk_must_use_sizer_and_drawdown - F04 / etapa 04: sizing fixo, sizer nao chamado
+   - XFAIL tests/unit/test_regressions_pending.py::test_didi_rejects_bad_validation_metrics - F05 / etapa 06: DiDi aprova folds reprovados
+
+2. .venv/bin/python -m pytest tests/unit/test_safety.py -q --tb=short
+   Resultado final:
+   - 31 passed, 1 warning in 8.04s
+
+3. .venv/bin/python -m pytest tests/unit/test_regressions_pending.py --runxfail -q --tb=short
+   Resultado final:
+   - 3 passed, 2 failed, 1 warning in 5.96s
+   - Falhas reproduzidas por --runxfail:
+     - test_risk_must_use_sizer_and_drawdown: F04 / etapa 04, sizing fixo, sizer nao chamado
+     - test_didi_rejects_bad_validation_metrics: F05 / etapa 06, DiDi aprova folds reprovados
+
+Resultados antes/depois observados
+- Antes informado no pedido: coleta quebrava por RuntimeError em subprocess.Popen durante import do CCXT; test_safety.py terminava em 30 passed, 1 failed, 2 errors.
+- Primeira rodada apos as correcoes iniciais reproduziu o problema de teardown DWX: 30 passed, 1 failed, 2 errors.
+- Depois da correcao de path com dir_fd no harness: test_safety.py fechou em 31 passed.
+- Suite completa final: 110 passed, 0 failed, 3 xfailed.
+- test_regressions_pending.py com --runxfail: 3 passed, 2 failed esperados (F04/F05).
+
+Confirmacao do gate de isolamento
+- Nao houve liberacao generica de subprocessos.
+- A excecao de subprocess.Popen permanece restrita a sondagens git read-only de versao: rev-parse --git-dir e describe.
+- O acesso operacional DWX fora de _ROOT continua negado por _deny.
+- A resolucao por fcntl.F_GETPATH/readlink apenas canonicaliza caminhos relativos recebidos com dir_fd; nao muda a regra de bloqueio.
+
+Artefatos
+- Diff desta rodada: docs/correcao/estabilizacao.diff
+- Hashes atualizados: docs/correcao/arquivos-alterados.txt

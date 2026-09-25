@@ -1,0 +1,99 @@
+diff --git a/backend/requirements.txt b/backend/requirements.txt
+--- a/backend/requirements.txt
++++ b/backend/requirements.txt
+@@
+ # Trading — Cripto
+-ccxt>=4.3.1
++ccxt==4.3.1
+ 
+ # Trading — Notificações
+ python-telegram-bot>=21.3
+diff --git a/backend/tests/conftest.py b/backend/tests/conftest.py
+--- a/backend/tests/conftest.py
++++ b/backend/tests/conftest.py
+@@
+ """Isolation is installed before test collection (including import-time effects)."""
++import fcntl
+ import ipaddress
+ import os
+ from pathlib import Path
+@@
+ def _deny(message):
+     _violations.append(message)
+     raise RuntimeError(message)
+ 
+ 
++def _resolve_audit_path(args):
++    path = Path(os.fsdecode(args[0]))
++    if path.is_absolute():
++        return path.resolve()
++    if len(args) > 1 and isinstance(args[1], int) and args[1] >= 0:
++        if hasattr(fcntl, "F_GETPATH"):
++            try:
++                fd_path = fcntl.fcntl(args[1], fcntl.F_GETPATH, b"\0" * 1024).split(b"\0", 1)[0]
++                return (Path(os.fsdecode(fd_path)) / path).resolve()
++            except OSError:
++                pass
++        for fd_root in ("/dev/fd", "/proc/self/fd"):
++            try:
++                return (Path(os.readlink(f"{fd_root}/{args[1]}")) / path).resolve()
++            except OSError:
++                pass
++    return path.resolve()
++
++
+ def _audit(event, args):
+@@
+     path_events = {"open", "os.listdir", "os.scandir", "os.mkdir", "os.remove", "os.rmdir", "os.rename"}
+     if event in path_events and isinstance(args[0], (str, bytes, os.PathLike)):
+-        path = Path(os.fsdecode(args[0])).resolve()
++        path = _resolve_audit_path(args)
+         if path.name == ".env" or path.name.startswith(".env.") and path.name != ".env.example":
+             _deny("Test attempted to read environment secrets")
+@@
+     if event in {"subprocess.Popen", "os.system"}:
+         # CCXT's bundled toolz probes its version using this read-only command.
+-        if event == "subprocess.Popen" and args[1] in (
+-            "git rev-parse --git-dir", "git.cmd rev-parse --git-dir", "git.exe rev-parse --git-dir",
+-            ["git", "rev-parse", "--git-dir"], ["git.cmd", "rev-parse", "--git-dir"],
+-        ):
++        if event == "subprocess.Popen" and (
++            args[1] in (
++                "git rev-parse --git-dir", "git.cmd rev-parse --git-dir", "git.exe rev-parse --git-dir",
++                ["git", "rev-parse", "--git-dir"], ["git.cmd", "rev-parse", "--git-dir"],
++            )
++            or (
++                isinstance(args[1], (list, tuple))
++                and len(args[1]) >= 2
++                and args[1][0] in ("git", "git.cmd", "git.exe")
++                and args[1][1] == "describe"
++            )
++        ):
+             return
+         _deny("Test attempted a subprocess outside the isolation boundary")
+diff --git a/backend/tests/unit/test_regressions_pending.py b/backend/tests/unit/test_regressions_pending.py
+--- a/backend/tests/unit/test_regressions_pending.py
++++ b/backend/tests/unit/test_regressions_pending.py
+@@
+ def test_factory_binance_constructor_contract():
+     from trading.connectors.factory import get_connector
+     from trading.connectors.simulated import SimulatedConnector
+-    # Previously raised TypeError; safe default now creates a credential-free adapter.
+-    assert isinstance(get_connector("CRIPTO", force_new=True), SimulatedConnector)
++    with pytest.raises(CapabilityUnavailable):
++        get_connector("CRIPTO", force_new=True)
++    assert isinstance(get_connector(_context(), force_new=True), SimulatedConnector)
+diff --git a/backend/tests/unit/test_safety.py b/backend/tests/unit/test_safety.py
+--- a/backend/tests/unit/test_safety.py
++++ b/backend/tests/unit/test_safety.py
+@@
+ from decimal import Decimal
++import shutil
+ from types import SimpleNamespace
+ from unittest.mock import AsyncMock, MagicMock
+@@
+     await conn.create_order(OrderIntent("temporary-dwx", context, OrderSide.BUY,
+                                         OrderType.MARKET, Decimal("1")))
+     assert list(tmp_path.iterdir()) == []
+     assert list(transport.directory.glob("DWX_Commands_*.txt"))
++    shutil.rmtree(transport.directory, ignore_errors=True)

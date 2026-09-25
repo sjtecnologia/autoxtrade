@@ -1,0 +1,9 @@
+Arquivos alterados nesta rodada - SHA256
+Data: 2026-09-25
+
+backend/requirements.txt: SHA256 2c0a69ca7fc613d09333a82200d58192906dae590950dbec163fe2ca7f20e2e1
+backend/tests/conftest.py: SHA256 9c1dab2db9618a3d1ccc978ea5ea6ef49ffdb5254db7b22ab39e7fe68da41a83
+backend/tests/unit/test_safety.py: SHA256 7f193e2564171b41ce23049f07fbb0960c64dfa64a7c1de41dba502a66ef0db8
+backend/tests/unit/test_regressions_pending.py: SHA256 af58c70af4873037894cdb4d17006b8e53a327763ea4b260c60f238fa0ed250d
+docs/correcao/testes-estabilizacao.txt: SHA256 f06f88aa55983789fc000f4fce348ec53afe90a1c9bfdc82c4fbfd8e090bf78d
+docs/correcao/estabilizacao.diff: SHA256 828fe57716efdb25afce47f622fae09433717b361fb7acec9ed164ed705b11c3
