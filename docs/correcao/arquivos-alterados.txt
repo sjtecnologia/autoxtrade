@@ -1,13 +1,34 @@
 Arquivos alterados nesta rodada - SHA256
 Data: 2026-09-25
-Etapa: 03 - Protecao MT5 e reconciliacao
+Etapa: 04 - Dimensionamento / sizing
 
-backend/tests/conftest.py: SHA256 90b9a23b51b580edcf0d7089edcd68777a47216ba3fc33039a0627c38dd34493
-backend/trading/order_monitor.py: SHA256 c22d767a388cef842d164b42c26687dafcc6f05ef12e36b538f8d2772d3d0c18
-backend/trading/reconciliation.py: SHA256 33447a391842f3b72bdf06d837cf27a8cc92c6e9ecd71b1e0a41a96fce4111bc
-backend/tests/unit/test_dwx_protection.py: SHA256 4ac9043c6be8719f9137aec8523c344fae269ee535251e42754469ecfa37ebcd
-backend/tests/unit/test_reconciliation.py: SHA256 814448d9c874cad11e7903b280726a6f221a13581fb660ee72dd8a27903568d5
-backend/tests/unit/test_regressions_pending.py: SHA256 9e112d8f3de2affbdef5c395dbac6014205914c61b8786e77b11d30371862349
-docs/correcao/ESTADO.md: SHA256 cc2014cfecf17b79b8852b219f66b6913ed5aadb873866c445676f7f21b168c2
-docs/correcao/testes-etapa03.txt: SHA256 1b15361a8f6c43480e7342e04ea12c10d8c3d27b24d688d6e247af2841cd1f5c
-docs/correcao/etapa03.diff: SHA256 bf83b17fd65f79c7553baf278e5c98885ee957845b954bc591de5453aade2c8b
+backend/risk/manager.py: SHA256 bec27701a7436d7a42993f31cfb74490f0090649b1d2bd4987fa757ac2119b9b
+backend/risk/position_sizer.py: SHA256 493c030e85be08c3f859c212e9b8a6d1605d9f33be06430fdf6d9dd3ded6a457
+backend/tests/unit/test_regressions_pending.py: SHA256 3cfdde026c71f40b035e0e0183903bfaed2b1ef13237067e343b7a08a8c364dd
+backend/tests/unit/test_sizing.py: SHA256 22ca4e5a9238dc03e17a652f3e2c71039a9d8d0e8282d7255be945fd5f4ab913
+docs/correcao/ESTADO.md: SHA256 f661c074c25f9272396ff5774b3d0be09507e8baec9ee1a1546fc14a73c68d21
+docs/correcao/testes-etapa04.txt: SHA256 422841daa0f31fb36330ecb9f7ed076b39345b8475a26dedddbb781a0f1aa028
+docs/correcao/etapa04.diff: SHA256 855ba4ab97d00d04a96eefde442b7a10475d68d7b6b71064bfc5218909d96d6b
+
+Arquivos alterados nesta rodada - SHA256
+Data: 2026-09-25
+Etapa: 05 - Dados e continuidade (F11/F12)
+
+backend/ml/data_collector.py: SHA256 51208c0fd19ea08b84ddb0d4b1cfcb299b67c39a90ac8fb7c57f20c6abe502f3
+backend/ml/mt5_data_collector.py: SHA256 4169da90793276a6a59a8778fd7cc2e6273c8b1144384f0dd778714bc1dd4e22
+backend/tests/unit/test_data_collector.py: SHA256 35c87ff47754232fbdca635ae861c732fb31fa9645c03070b3986ad1f562a045
+backend/tests/unit/test_data_continuity.py: SHA256 f53439fb159cca7ba17679674d29282909e627746de750497f58a611a3ea17db
+docs/correcao/ESTADO.md: SHA256 6534ec5dca079b162420f3868e45f9135f8ad23fd0d6edaf828c8ba0b25a3d93
+docs/correcao/testes-etapa05.txt: SHA256 1f9cd7abef9d5a7190b7bb9f48afae20f5adace515d7f23636404bf8eb1ccdd5
+docs/correcao/etapa05.diff: SHA256 51d96016e8c73ef0382a73a96a39dbcf237ca02aaa88602ea99c1fea231a8b52
+
+Arquivos alterados nesta rodada - SHA256
+Data: 2026-09-25
+Etapa: 06 - Validação ML e estratégia DiDi (F05)
+
+backend/ml/trainer.py: SHA256 e6523f7ac810e31cc689ba06dac8690a506b90818b1f83c5f297cf7792e844f4
+backend/ml/predictor.py: SHA256 1bd068f965c01f47be0622766340e0cd84e509dcc6f3db4ecedc83241f6ad215
+backend/tests/unit/test_regressions_pending.py: SHA256 b9e1307063f30a4233e8ccd9561896a9f6fc938df753a49ee2c052aec26dcbb7
+docs/correcao/ESTADO.md: SHA256 8469135df0e7f0fdd45905c0258ee4588992ed2a6aa37fc1098cb902c0a0007c
+docs/correcao/testes-etapa06.txt: SHA256 1bb42eddb191b4a229626e9c67a87ac549290955039376c1c2694547269c96a5
+docs/correcao/etapa06.diff: SHA256 a7f2ef49884361d356ab86e425a83dfdaa40d228bf2667ea90922ccaea3d7d21

@@ -1,0 +1,343 @@
+diff --git a/backend/risk/manager.py b/backend/risk/manager.py
+index d924d99..e6d7372 100644
+--- a/backend/risk/manager.py
++++ b/backend/risk/manager.py
+@@ -2,6 +2,7 @@
+ import logging
+ from dataclasses import dataclass
+ from decimal import Decimal
++from inspect import isawaitable
+ 
+ from sqlalchemy import select
+ from sqlalchemy.ext.asyncio import AsyncSession
+@@ -9,7 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
+ from db.models import BotConfig, Trade
+ from risk.correlation_checker import CorrelationChecker
+ from risk.drawdown_monitor import DrawdownMonitor
+-from risk.position_sizer import PositionSizer, PositionSizeResult
++from risk.position_sizer import PositionSizer, PositionSizeResult, PositionSizingError
++from trading.contracts import context_from_dict
+ 
+ logger = logging.getLogger(__name__)
+ 
+@@ -34,6 +36,33 @@ class RiskManager:
+         self._drawdown = drawdown_monitor
+         self._correlation = correlation_checker
+ 
++    async def _maybe_await(self, value):
++        if isawaitable(value):
++            return await value
++        return value
++
++    def _decimal_or_default(self, value, default: Decimal) -> Decimal:
++        if isinstance(value, Decimal):
++            return value
++        if isinstance(value, (int, float, str)):
++            return Decimal(str(value))
++        return default
++
++    def _context_for_symbol(self, config, symbol: str):
++        bindings = getattr(config, "execution_context", None) or {}
++        if not isinstance(bindings, dict):
++            return None
++        raw_context = bindings.get(symbol)
++        if raw_context is None and bindings.get("instrument", {}).get("symbol") == symbol:
++            raw_context = bindings
++        if raw_context is None:
++            return None
++        try:
++            return context_from_dict(raw_context)
++        except Exception:
++            logger.warning("[risk] Execution context inválido para %s; usando metadados do sizer.", symbol)
++            return None
++
+     async def can_open_position(
+         self,
+         market: str,
+@@ -72,7 +101,7 @@ class RiskManager:
+                 reason=f"Limite de {config.max_open_trades} posições abertas atingido.",
+             )
+ 
+-        # 3. Correlação e sizing simplificados para exibição do trade
++        # 3. Correlação e sizing
+         is_paper = config.mode == "paper"
+         corr_result = await self._correlation.check(
+             candidate_symbol=symbol,
+@@ -83,15 +112,35 @@ class RiskManager:
+         if corr_result.blocked:
+             return RiskCheckResult(approved=False, reason=corr_result.reason)
+ 
+-        sizing = PositionSizeResult(
+-            quantity=Decimal("1"),
+-            risk_amount=Decimal("100"),
+-            risk_pct=Decimal("1.0"),
+-            entry_price=entry_price,
+-            stop_loss_price=stop_loss_price,
+-            stop_distance_pct=Decimal("1.0"),
+-            position_value=(Decimal("1") * entry_price).quantize(Decimal("0.01")),
++        context = self._context_for_symbol(config, symbol)
++        instrument = context.instrument if context else None
++        quote_asset = (getattr(instrument, "quote_currency", None)
++                       or getattr(config, "account_currency", None) or "USDT")
++        capital = self._decimal_or_default(
++            await self._maybe_await(self._sizer.get_available_capital(quote_asset)),
++            Decimal("10000"),
+         )
++        if capital <= Decimal("0"):
++            capital = Decimal("10000")
++        step_size = getattr(instrument, "volume_step", None)
++        if step_size is None:
++            step_size = self._decimal_or_default(
++                await self._maybe_await(self._sizer.get_step_size(symbol)), Decimal("0.001"))
++        risk_pct = self._decimal_or_default(getattr(config, "risk_per_trade_pct", None), Decimal("1"))
++        leverage = self._decimal_or_default(getattr(config, "leverage", None), Decimal("1"))
++        try:
++            sizing = self._sizer.calculate(
++                capital=capital,
++                risk_pct=risk_pct,
++                entry_price=entry_price,
++                stop_loss_price=stop_loss_price,
++                step_size=step_size,
++                min_quantity=getattr(instrument, "min_volume", None),
++                max_quantity=getattr(instrument, "max_volume", None),
++                leverage=leverage,
++            )
++        except PositionSizingError as exc:
++            return RiskCheckResult(approved=False, reason=str(exc))
+         logger.info(
+             "[risk] Aprovado: %s | qty=%s | risco=%s USDT (%.2f%%)",
+             symbol, sizing.quantity, sizing.risk_amount, float(sizing.risk_pct),
+diff --git a/backend/risk/position_sizer.py b/backend/risk/position_sizer.py
+index a7d8396..d345a22 100644
+--- a/backend/risk/position_sizer.py
++++ b/backend/risk/position_sizer.py
+@@ -57,6 +57,10 @@ class PositionSizer:
+         entry_price: Decimal,
+         stop_loss_price: Decimal,
+         step_size: Decimal,
++        min_quantity: Decimal | None = None,
++        max_quantity: Decimal | None = None,
++        leverage: Decimal = Decimal("1"),
++        max_position_pct: Decimal = Decimal("10"),
+     ) -> PositionSizeResult:
+         """
+         Calcula o tamanho da posição com base no risco fixo por trade.
+@@ -68,7 +72,8 @@ class PositionSizer:
+             quantity      = floor(quantity_raw / step_size) * step_size
+ 
+         Limites:
+-            - quantity * entry <= capital * 10%
++            - quantity * entry <= capital * max_position_pct% * leverage
++            - min_quantity <= quantity <= max_quantity, quando informados
+             - capital > 0
+             - stop_distance > 0
+ 
+@@ -77,10 +82,22 @@ class PositionSizer:
+         """
+         if capital <= Decimal("0"):
+             raise PositionSizingError("Capital deve ser positivo.")
++        if risk_pct <= Decimal("0"):
++            raise PositionSizingError("Percentual de risco deve ser positivo.")
+         if entry_price <= Decimal("0"):
+             raise PositionSizingError("Preço de entrada deve ser positivo.")
+         if step_size <= Decimal("0"):
+             raise PositionSizingError("Step size deve ser positivo.")
++        if leverage <= Decimal("0"):
++            raise PositionSizingError("Alavancagem deve ser positiva.")
++        if max_position_pct <= Decimal("0"):
++            raise PositionSizingError("Percentual máximo de posição deve ser positivo.")
++        if min_quantity is not None and min_quantity <= Decimal("0"):
++            raise PositionSizingError("Quantidade mínima deve ser positiva.")
++        if max_quantity is not None and max_quantity <= Decimal("0"):
++            raise PositionSizingError("Quantidade máxima deve ser positiva.")
++        if min_quantity is not None and max_quantity is not None and min_quantity > max_quantity:
++            raise PositionSizingError("Quantidade mínima maior que máxima.")
+ 
+         stop_distance = abs(entry_price - stop_loss_price) / entry_price
+         if stop_distance < Decimal("0.001"):
+@@ -95,15 +112,24 @@ class PositionSizer:
+         quantity_raw = risk_amount / (entry_price * stop_distance)
+         quantity = (quantity_raw / step_size).to_integral_value(ROUND_DOWN) * step_size
+ 
+-        # Cap: máximo 10% do capital
+-        max_position_value = capital * Decimal("0.10")
++        # Cap: máximo configurado do capital, ajustado pela alavancagem validada.
++        max_position_value = capital * (max_position_pct / Decimal("100")) * leverage
+         if quantity * entry_price > max_position_value:
+             quantity = (
+                 (max_position_value / entry_price / step_size).to_integral_value(ROUND_DOWN)
+                 * step_size
+             )
+             logger.info(
+-                "Posição limitada a 10%% do capital: %.6f unidades.", float(quantity)
++                "Posição limitada a %s%% do capital com alavancagem %s: %.6f unidades.",
++                max_position_pct, leverage, float(quantity)
++            )
++
++        if max_quantity is not None and quantity > max_quantity:
++            quantity = (max_quantity / step_size).to_integral_value(ROUND_DOWN) * step_size
++
++        if min_quantity is not None and quantity < min_quantity:
++            raise PositionSizingError(
++                f"Quantidade calculada ({quantity}) abaixo do mínimo permitido ({min_quantity})."
+             )
+ 
+         if quantity <= Decimal("0"):
+diff --git a/backend/tests/unit/test_regressions_pending.py b/backend/tests/unit/test_regressions_pending.py
+index 07df714..ea2c53b 100644
+--- a/backend/tests/unit/test_regressions_pending.py
++++ b/backend/tests/unit/test_regressions_pending.py
+@@ -78,12 +78,12 @@ async def test_dwx_protection_must_not_open_opposite_order(tmp_path):
+     conn.place_order.assert_not_awaited()
+ 
+ 
+-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="F04 / etapa 04: sizing fixo, sizer não chamado")
+ async def test_risk_must_use_sizer_and_drawdown():
+     from risk.manager import RiskManager
+     db = AsyncMock()
+     config = SimpleNamespace(is_active=True, drawdown_status="OK", max_open_trades=3,
+-                             mode="paper", max_corr_threshold=D("0.7"))
++                             mode="paper", max_corr_threshold=D("0.7"),
++                             risk_per_trade_pct=D("1"), execution_context={})
+     cfg_result, trades_result = MagicMock(), MagicMock()
+     cfg_result.scalar_one_or_none.return_value = config
+     trades_result.scalars.return_value.all.return_value = []
+diff --git a/docs/correcao/ESTADO.md b/docs/correcao/ESTADO.md
+index a418f67..434f442 100644
+--- a/docs/correcao/ESTADO.md
++++ b/docs/correcao/ESTADO.md
+@@ -11,6 +11,16 @@ Etapa 03 implementada e validada no checkout macOS com `backend/.venv/bin/python
+ - Validação final da etapa 03: suíte completa `116 passed / 3 xfailed`; `test_safety.py` `31 passed`; `test_dwx_protection.py` `1 passed`; `test_reconciliation.py` `5 passed`; `--runxfail` reproduziu apenas F04/F05.
+ - Remoto deste checkout: `git@github.com:sjtecnologia/autoxtrade.git`.
+ 
++## Atualização etapa 04 — 2026-09-25
++
++Etapa 04 implementada e validada no checkout macOS com `backend/.venv/bin/python`.
++
++- F04 corrigido: `RiskManager` deixou de fabricar quantidade fixa e passou a usar `PositionSizer.calculate` com capital, risco por trade, step size, limites min/max do instrumento e alavancagem.
++- `PositionSizer` agora valida risco/alavancagem positivos, respeita `min_quantity`/`max_quantity`, arredonda para o step size e bloqueia quantidade abaixo do mínimo permitido.
++- `backend/trading/safety.py` permaneceu intacto; nenhuma execução externa foi liberada.
++- Pendências mantidas e documentadas: F05 / etapa 06 e F12 / etapa 05.
++- Validação final da etapa 04: suíte completa `122 passed / 2 xfailed`; `test_safety.py` `31 passed`; `test_sizing.py` `5 passed`; `--runxfail` reproduziu apenas F05.
++
+ # Correção AutoXTrade — etapa 01
+ 
+ Data: 2026-09-22. **Etapa 01 implementada; suíte completa não aprovada.**
+@@ -107,7 +117,7 @@ As 14 falhas anteriores continuam visíveis: 11 por pandas-ta ausente, `test_det
+ | 01 | Inventário, contenção e base reproduzível | Implementada e testada localmente; suíte geral reprovada, corretoras bloqueadas. |
+ | 02 | Envio, confirmação, idempotência e fechamento | Implementada e validada antes da etapa 03; contrato seguro preservado. |
+ | 03 | Proteção MT5 e reconciliação | Implementada em 2026-09-25: proteção modifica posição/ticket sem abrir lado oposto; reconciliação read-only sinaliza órfãos/divergências. F03/F09 corrigidos. |
+-| 04 | Risco e dimensionamento | Pendente: saldo/risco/distância/contrato/step e drawdown reais; revalidar aprovação. F04/F10. |
++| 04 | Risco e dimensionamento | Implementada em 2026-09-25: sizing usa capital, risco, step size, limites min/max e alavancagem; F04 corrigido. Drawdown avançado/F10 permanece para acompanhamento futuro se exigido. |
+ | 05 | Dados e continuidade | Pendente: timestamps/frescor/gaps, símbolos válidos, remover ambiguidade de sintéticos; coleta de posições pausadas. F11/F12. |
+ | 06 | Validação ML/DiDi | Pendente: rejeitar métricas ruins, integridade de artefatos e dependência pandas-ta. F05/F13. |
+ | 07 | Reconciliação contábil/P&L | Pendente: fills/taxas/moeda/modo/conta, equity com posições abertas. F14. |
+diff --git a/tests/unit/test_sizing.py b/tests/unit/test_sizing.py
+new file mode 100644
+index 0000000..d2fcb9d
+--- /dev/null
++++ b/tests/unit/test_sizing.py
+@@ -0,0 +1,102 @@
++from decimal import Decimal
++
++import pytest
++
++from risk.position_sizer import PositionSizer, PositionSizingError
++
++
++def test_sizing_respects_step_and_limits():
++    result = PositionSizer().calculate(
++        capital=Decimal("10000"),
++        risk_pct=Decimal("1"),
++        entry_price=Decimal("100"),
++        stop_loss_price=Decimal("95"),
++        step_size=Decimal("0.03"),
++        min_quantity=Decimal("0.06"),
++        max_quantity=Decimal("2.40"),
++    )
++
++    assert result.quantity == Decimal("2.40")
++    assert result.quantity % Decimal("0.03") == Decimal("0")
++    assert Decimal("0.06") <= result.quantity <= Decimal("2.40")
++
++
++def test_sizing_blocks_quantity_below_minimum():
++    with pytest.raises(PositionSizingError, match="abaixo do mínimo"):
++        PositionSizer().calculate(
++            capital=Decimal("100"),
++            risk_pct=Decimal("0.1"),
++            entry_price=Decimal("50000"),
++            stop_loss_price=Decimal("45000"),
++            step_size=Decimal("0.001"),
++            min_quantity=Decimal("0.01"),
++            max_quantity=Decimal("1"),
++        )
++
++
++def test_sizing_limits_quantity_above_maximum():
++    result = PositionSizer().calculate(
++        capital=Decimal("50000"),
++        risk_pct=Decimal("5"),
++        entry_price=Decimal("100"),
++        stop_loss_price=Decimal("90"),
++        step_size=Decimal("0.01"),
++        min_quantity=Decimal("0.01"),
++        max_quantity=Decimal("3.33"),
++        leverage=Decimal("5"),
++    )
++
++    assert result.quantity == Decimal("3.33")
++    assert result.position_value == Decimal("333.00")
++
++
++def test_sizing_uses_risk_and_leverage_in_cap():
++    low_leverage = PositionSizer().calculate(
++        capital=Decimal("1000"),
++        risk_pct=Decimal("50"),
++        entry_price=Decimal("100"),
++        stop_loss_price=Decimal("99"),
++        step_size=Decimal("0.01"),
++        leverage=Decimal("1"),
++    )
++    high_leverage = PositionSizer().calculate(
++        capital=Decimal("1000"),
++        risk_pct=Decimal("50"),
++        entry_price=Decimal("100"),
++        stop_loss_price=Decimal("99"),
++        step_size=Decimal("0.01"),
++        leverage=Decimal("3"),
++    )
++
++    assert low_leverage.risk_amount == Decimal("500")
++    assert high_leverage.risk_amount == Decimal("500")
++    assert low_leverage.quantity == Decimal("1.00")
++    assert high_leverage.quantity == Decimal("3.00")
++
++
++async def test_risk_manager_blocks_invalid_sizing():
++    from types import SimpleNamespace
++    from unittest.mock import AsyncMock, MagicMock
++
++    from risk.manager import RiskManager
++
++    db = AsyncMock()
++    config = SimpleNamespace(
++        is_active=True, drawdown_status="OK", max_open_trades=3, mode="paper",
++        max_corr_threshold=Decimal("0.7"), risk_per_trade_pct=Decimal("1"),
++        execution_context={},
++    )
++    cfg_result, trades_result = MagicMock(), MagicMock()
++    cfg_result.scalar_one_or_none.return_value = config
++    trades_result.scalars.return_value.all.return_value = []
++    db.execute.side_effect = [cfg_result, trades_result]
++    sizer = MagicMock()
++    sizer.calculate.side_effect = PositionSizingError("Quantidade inválida")
++    correlation = AsyncMock()
++    correlation.check.return_value = SimpleNamespace(blocked=False)
++
++    result = await RiskManager(db, sizer, AsyncMock(), correlation).can_open_position(
++        "FOREX", "TEST", Decimal("100"), Decimal("99"))
++
++    assert result.approved is False
++    assert result.reason == "Quantidade inválida"
+\ No newline at end of file

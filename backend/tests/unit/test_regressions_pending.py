@@ -78,12 +78,12 @@ async def test_dwx_protection_must_not_open_opposite_order(tmp_path):
     conn.place_order.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="F04 / etapa 04: sizing fixo, sizer não chamado")
 async def test_risk_must_use_sizer_and_drawdown():
     from risk.manager import RiskManager
     db = AsyncMock()
     config = SimpleNamespace(is_active=True, drawdown_status="OK", max_open_trades=3,
-                             mode="paper", max_corr_threshold=D("0.7"))
+                             mode="paper", max_corr_threshold=D("0.7"),
+                             risk_per_trade_pct=D("1"), execution_context={})
     cfg_result, trades_result = MagicMock(), MagicMock()
     cfg_result.scalar_one_or_none.return_value = config
     trades_result.scalars.return_value.all.return_value = []
@@ -98,7 +98,6 @@ async def test_risk_must_use_sizer_and_drawdown():
     sizer.calculate.assert_called_once()
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="F05 / etapa 06: DiDi aprova folds reprovados")
 async def test_didi_rejects_bad_validation_metrics(monkeypatch):
     import pandas as pd
     from ml.trainer import ModelTrainer
@@ -117,6 +116,13 @@ async def test_didi_rejects_bad_validation_metrics(monkeypatch):
     monkeypatch.setattr(trainer, "_save_model_files", lambda *a: ("fake-model", "fake-scaler"))
     result = await trainer.train("TEST/USDT", profile="didi")
     assert result.approved is False, "Performance gates must reject losing/empty validation"
+
+
+def test_predictor_rejeita_modelo_fora_do_diretorio_confiavel(tmp_path):
+    from ml.predictor import ModelNotFoundError, _trusted_model_path
+
+    with pytest.raises(ModelNotFoundError, match="fora do diretório confiável"):
+        _trusted_model_path(tmp_path / "external.pkl")
 
 
 def test_factory_binance_constructor_contract():

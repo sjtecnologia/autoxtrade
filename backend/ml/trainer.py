@@ -728,7 +728,7 @@ class ModelTrainer:
                 "min_required_rows": 80,
                 "min_train_samples": 40,
                 "min_test_samples": 8,
-                "skip_performance_gates": True,
+                "skip_performance_gates": False,
             }
 
         # Perfil robusto antigo (default legado)

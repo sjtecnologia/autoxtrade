@@ -10,6 +10,8 @@ from typing import Optional
 import ccxt
 import pandas as pd
 
+from trading.contracts import CapabilityUnavailable
+
 logger = logging.getLogger(__name__)
 
 # Mapeamento de timeframe → segundos (para detecção de gaps)
@@ -31,13 +33,43 @@ class DataQualityReport:
         self.nulls_removed: int = 0
         self.small_gaps_filled: int = 0
         self.large_gaps: list[str] = []  # timestamps dos gaps grandes (ISO string)
+        self.out_of_order_detected: bool = False
+        self.stale_data: bool = False
+        self.freshness_age_seconds: float | None = None
+
+    @property
+    def large_gaps_detected(self) -> int:
+        """Quantidade de gaps grandes que exigem tratamento explícito."""
+        return len(self.large_gaps)
 
 
 class DataCollector:
     """Baixa dados OHLCV históricos da Binance e armazena em Parquet."""
 
-    def __init__(self, exchange: Optional[ccxt.Exchange] = None) -> None:
+    def __init__(
+        self,
+        exchange: Optional[ccxt.Exchange] = None,
+        *,
+        supported_symbols: Optional[set[str] | list[str]] = None,
+        freshness_window_seconds: int | None = None,
+        small_gap_tolerance: int = 2,
+    ) -> None:
         self._exchange = exchange or ccxt.binance({"enableRateLimit": True})
+        self._supported_symbols = set(supported_symbols or ())
+        self._freshness_window_seconds = freshness_window_seconds
+        if small_gap_tolerance < 1:
+            raise ValueError("small_gap_tolerance deve ser positivo")
+        self._small_gap_tolerance = small_gap_tolerance
+
+    def validate_symbol(self, symbol: str) -> None:
+        """Recusa símbolos fora do catálogo conhecido do conector."""
+        known = self._supported_symbols or set(getattr(self._exchange, "symbols", ()) or ())
+        if not known and getattr(self._exchange, "markets", None):
+            known = set(self._exchange.markets)
+        if not symbol or symbol not in known:
+            raise CapabilityUnavailable(
+                f"Símbolo não suportado ou sem contexto de venue/instrumento: {symbol!r}"
+            )
 
     # ------------------------------------------------------------------
     # Download
@@ -61,6 +93,7 @@ class DataCollector:
         Returns:
             DataFrame com colunas [timestamp, open, high, low, close, volume]
         """
+        self.validate_symbol(symbol)
         if until is None:
             until = self._exchange.milliseconds()
 
@@ -141,7 +174,12 @@ class DataCollector:
     # ------------------------------------------------------------------
 
     def validate_and_clean(
-        self, df: pd.DataFrame, timeframe: str = "1h"
+        self,
+        df: pd.DataFrame,
+        timeframe: str = "1h",
+        *,
+        now: datetime | pd.Timestamp | None = None,
+        freshness_window_seconds: int | None = None,
     ) -> tuple[pd.DataFrame, DataQualityReport]:
         """Valida e limpa DataFrame OHLCV.
 
@@ -156,30 +194,60 @@ class DataCollector:
         report.duplicates_removed = original_len - len(df)
 
         # 2. Remover nulos em colunas OHLCV essenciais
+        null_timestamps = set(
+            df.loc[df[["open", "high", "low", "close", "volume"]].isna().any(axis=1), "timestamp"]
+        )
         before_null = len(df)
         df = df.dropna(subset=["open", "high", "low", "close", "volume"])
         report.nulls_removed = before_null - len(df)
 
-        # 3. Ordenar por timestamp
+        # 3. Sinalizar ordem recebida antes de ordenar para consumo downstream
+        report.out_of_order_detected = not df["timestamp"].is_monotonic_increasing
         df = df.sort_values("timestamp").reset_index(drop=True)
+
+        freshness_window = (
+            freshness_window_seconds
+            if freshness_window_seconds is not None
+            else self._freshness_window_seconds
+        )
+        if freshness_window is not None and len(df):
+            reference = pd.Timestamp(now or datetime.now(timezone.utc))
+            if reference.tzinfo is None:
+                reference = reference.tz_localize("UTC")
+            age = (reference - pd.Timestamp(df["timestamp"].iloc[-1])).total_seconds()
+            report.freshness_age_seconds = max(age, 0.0)
+            report.stale_data = age > freshness_window
 
         # 4. Detectar e tratar gaps
         tf_seconds = TIMEFRAME_SECONDS.get(timeframe, 3600)
         expected_delta = pd.Timedelta(seconds=tf_seconds)
-        gap_threshold = expected_delta * 3  # gap > 3 candles
-
         if len(df) >= 2:
             time_diffs = df["timestamp"].diff()
-            gap_mask = time_diffs > gap_threshold
+            gap_mask = time_diffs > expected_delta
 
             for idx in df[gap_mask].index:
                 gap_start = df.loc[idx - 1, "timestamp"]
                 gap_end = df.loc[idx, "timestamp"]
                 gap_size = (gap_end - gap_start) / expected_delta
+                missing_count = int(round(gap_size)) - 1
 
-                if gap_size <= 3:
-                    # Gap pequeno: forward fill (já implícito com reindex futuro)
-                    report.small_gaps_filled += int(gap_size) - 1
+                if missing_count <= self._small_gap_tolerance:
+                    inserted = []
+                    previous = df.loc[idx - 1].copy()
+                    for timestamp in pd.date_range(
+                        gap_start + expected_delta,
+                        gap_end - expected_delta,
+                        freq=expected_delta,
+                    ):
+                        if timestamp in null_timestamps:
+                            continue
+                        row = previous.copy()
+                        row["timestamp"] = timestamp
+                        row["volume"] = 0.0
+                        inserted.append(row)
+                    if inserted:
+                        df = pd.concat([df, pd.DataFrame(inserted)], ignore_index=True)
+                        report.small_gaps_filled += len(inserted)
                 else:
                     report.large_gaps.append(gap_start.isoformat())
                     logger.warning(
@@ -188,6 +256,8 @@ class DataCollector:
                         gap_start.isoformat(),
                     )
 
+        if report.small_gaps_filled:
+            df = df.sort_values("timestamp").reset_index(drop=True)
         return df, report
 
     # ------------------------------------------------------------------

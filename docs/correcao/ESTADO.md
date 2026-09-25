@@ -7,9 +7,40 @@ Etapa 03 implementada e validada no checkout macOS com `backend/.venv/bin/python
 - F03 corrigido: proteção DWX/MT5 usa modificação identificada da posição (`MODIFY_ORDER` via `modify_position_protection`) e os testes provam que não há fallback para ordem oposta por `place_order`.
 - F09 corrigido: reconciliação read-only compara trades abertos com posições/ordens reportadas pelo conector, sinaliza órfãos/divergências e não executa fechamento, cancelamento, redução ou abertura real.
 - `backend/trading/safety.py` permaneceu intacto; o gate segue fail-closed para execução externa.
-- Pendências mantidas e documentadas: F04 / etapa 04, F05 / etapa 06 e F12 / etapa 05.
+- Pendências mantidas e documentadas: F04 / etapa 04 e F05 / etapa 06.
 - Validação final da etapa 03: suíte completa `116 passed / 3 xfailed`; `test_safety.py` `31 passed`; `test_dwx_protection.py` `1 passed`; `test_reconciliation.py` `5 passed`; `--runxfail` reproduziu apenas F04/F05.
 - Remoto deste checkout: `git@github.com:sjtecnologia/autoxtrade.git`.
+
+## Atualização etapa 04 — 2026-09-25
+
+Etapa 04 implementada e validada no checkout macOS com `backend/.venv/bin/python`.
+
+- F04 corrigido: `RiskManager` deixou de fabricar quantidade fixa e passou a usar `PositionSizer.calculate` com capital, risco por trade, step size, limites min/max do instrumento e alavancagem.
+- `PositionSizer` agora valida risco/alavancagem positivos, respeita `min_quantity`/`max_quantity`, arredonda para o step size e bloqueia quantidade abaixo do mínimo permitido.
+- `backend/trading/safety.py` permaneceu intacto; nenhuma execução externa foi liberada.
+- Pendência mantida e documentada: F05 / etapa 06.
+- Validação final da etapa 04: suíte completa `122 passed / 2 xfailed`; `test_safety.py` `31 passed`; `test_sizing.py` `5 passed`; `--runxfail` reproduziu apenas F05.
+
+## Atualização etapa 05 — 2026-09-25
+
+Etapa 05 implementada e validada no checkout macOS com `backend/.venv/bin/python`.
+
+- F12 corrigido: gaps pequenos, dentro da tolerância configurável de 2 candles, são preenchidos deterministicamente com OHLC do candle anterior e volume zero; gaps grandes são registrados e não preenchidos.
+- F11 corrigido: dados fora de ordem e dados velhos são sinalizados; símbolos fora do catálogo e sintéticos sem contexto de instrumento/venue levantam `CapabilityUnavailable` antes da coleta.
+- Foram adicionados testes para frescor, ordem, símbolo inválido e símbolo sintético ambíguo; o `xfail` de F12 foi removido.
+- `backend/trading/safety.py` permaneceu intacto; o gate continua fail-closed para execução externa. Nenhuma ordem real foi enviada e nenhum serviço MT5/corretora foi iniciado.
+- Validação final: suíte completa `127 passed / 1 xfailed` (somente F05); `test_safety.py` `31 passed`; coletor `6 passed`; continuidade `4 passed`.
+
+## Atualização etapa 06 — 2026-09-25
+
+Etapa 06 implementada e validada no checkout macOS com `backend/.venv/bin/python`.
+
+- F05 corrigido: o perfil DiDi voltou a aplicar todos os gates de performance sobre os folds do walk-forward; métricas ruins rejeitam o treinamento e não geram modelo aprovado.
+- O carregamento por `joblib` agora aceita somente artefatos dentro de `ml/models`; caminhos externos são rejeitados antes da desserialização.
+- O `xfail` strict de F05 foi removido. Saídas de ML permanecem leitura/sugestão e não liberam execução real.
+- `backend/trading/safety.py` permaneceu intacto; o gate fail-closed continua bloqueando execução externa e nenhuma ordem real foi enviada.
+- Validação final: suíte completa `129 passed / 0 xfailed`; `test_safety.py` `31 passed`; regressões `6 passed`; estratégia DiDi `3 passed`.
+- Pendências tratadas nas etapas 02-06: F02, F03, F04, F05, F09, F11 e F12.
 
 # Correção AutoXTrade — etapa 01
 
@@ -107,11 +138,11 @@ As 14 falhas anteriores continuam visíveis: 11 por pandas-ta ausente, `test_det
 | 01 | Inventário, contenção e base reproduzível | Implementada e testada localmente; suíte geral reprovada, corretoras bloqueadas. |
 | 02 | Envio, confirmação, idempotência e fechamento | Implementada e validada antes da etapa 03; contrato seguro preservado. |
 | 03 | Proteção MT5 e reconciliação | Implementada em 2026-09-25: proteção modifica posição/ticket sem abrir lado oposto; reconciliação read-only sinaliza órfãos/divergências. F03/F09 corrigidos. |
-| 04 | Risco e dimensionamento | Pendente: saldo/risco/distância/contrato/step e drawdown reais; revalidar aprovação. F04/F10. |
-| 05 | Dados e continuidade | Pendente: timestamps/frescor/gaps, símbolos válidos, remover ambiguidade de sintéticos; coleta de posições pausadas. F11/F12. |
-| 06 | Validação ML/DiDi | Pendente: rejeitar métricas ruins, integridade de artefatos e dependência pandas-ta. F05/F13. |
+| 04 | Risco e dimensionamento | Implementada em 2026-09-25: sizing usa capital, risco, step size, limites min/max e alavancagem; F04 corrigido. Drawdown avançado/F10 permanece para acompanhamento futuro se exigido. |
+| 05 | Dados e continuidade | Implementada em 2026-09-25: gaps pequenos preenchidos, gaps grandes sinalizados, frescor/ordem validados e símbolos inválidos ou ambíguos rejeitados. F11/F12 corrigidos; posições pausadas permanecem somente leitura. |
+| 06 | Validação ML/DiDi | Implementada em 2026-09-25: gates DiDi aplicados, F05 corrigido e carregamento de modelos restrito ao diretório confiável. F13/dependência pandas-ta permanece acompanhamento técnico, sem xfail pendente. |
 | 07 | Reconciliação contábil/P&L | Pendente: fills/taxas/moeda/modo/conta, equity com posições abertas. F14. |
 | 08 | API/frontend/auth/deploy | Pendente: WS/auth, transparência de estado, migração e smoke local de containers. F15/F16. |
 | 09 | Validação final de contratos | Pendente: suíte verde, simuladores de falhas e integração autorizada futura por conta; sem promessa de rentabilidade. |
 
-Dependência exata para liberar conectores: evidência de identidade e natureza da conta, protocolo/versão DWX/EA, netting ou hedging, símbolo/contrato/tick/lot/step/moeda, mapeamento idempotente pedido→ticket→fills, modificação SL/TP e redução/fechamento por posição, cancelamento distinto de fechamento, reconciliação e taxas. Nenhum desses pontos é validado por uma flag ou por saldo disponível. Na ausência dessa evidência o bloqueio permanece. **Parada na etapa 01; próxima etapa 02.**
+Dependência exata para liberar conectores: evidência de identidade e natureza da conta, protocolo/versão DWX/EA, netting ou hedging, símbolo/contrato/tick/lot/step/moeda, mapeamento idempotente pedido→ticket→fills, modificação SL/TP e redução/fechamento por posição, cancelamento distinto de fechamento, reconciliação e taxas. Nenhum desses pontos é validado por uma flag ou por saldo disponível. Na ausência dessa evidência o bloqueio permanece. **Etapa 06 concluída; F02, F03, F04, F05, F09, F11 e F12 tratados.**

@@ -2,6 +2,7 @@
 import logging
 from dataclasses import dataclass
 from decimal import Decimal
+from inspect import isawaitable
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,7 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from db.models import BotConfig, Trade
 from risk.correlation_checker import CorrelationChecker
 from risk.drawdown_monitor import DrawdownMonitor
-from risk.position_sizer import PositionSizer, PositionSizeResult
+from risk.position_sizer import PositionSizer, PositionSizeResult, PositionSizingError
+from trading.contracts import context_from_dict
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +35,33 @@ class RiskManager:
         self._sizer = position_sizer
         self._drawdown = drawdown_monitor
         self._correlation = correlation_checker
+
+    async def _maybe_await(self, value):
+        if isawaitable(value):
+            return await value
+        return value
+
+    def _decimal_or_default(self, value, default: Decimal) -> Decimal:
+        if isinstance(value, Decimal):
+            return value
+        if isinstance(value, (int, float, str)):
+            return Decimal(str(value))
+        return default
+
+    def _context_for_symbol(self, config, symbol: str):
+        bindings = getattr(config, "execution_context", None) or {}
+        if not isinstance(bindings, dict):
+            return None
+        raw_context = bindings.get(symbol)
+        if raw_context is None and bindings.get("instrument", {}).get("symbol") == symbol:
+            raw_context = bindings
+        if raw_context is None:
+            return None
+        try:
+            return context_from_dict(raw_context)
+        except Exception:
+            logger.warning("[risk] Execution context inválido para %s; usando metadados do sizer.", symbol)
+            return None
 
     async def can_open_position(
         self,
@@ -72,7 +101,7 @@ class RiskManager:
                 reason=f"Limite de {config.max_open_trades} posições abertas atingido.",
             )
 
-        # 3. Correlação e sizing simplificados para exibição do trade
+        # 3. Correlação e sizing
         is_paper = config.mode == "paper"
         corr_result = await self._correlation.check(
             candidate_symbol=symbol,
@@ -83,15 +112,35 @@ class RiskManager:
         if corr_result.blocked:
             return RiskCheckResult(approved=False, reason=corr_result.reason)
 
-        sizing = PositionSizeResult(
-            quantity=Decimal("1"),
-            risk_amount=Decimal("100"),
-            risk_pct=Decimal("1.0"),
-            entry_price=entry_price,
-            stop_loss_price=stop_loss_price,
-            stop_distance_pct=Decimal("1.0"),
-            position_value=(Decimal("1") * entry_price).quantize(Decimal("0.01")),
+        context = self._context_for_symbol(config, symbol)
+        instrument = context.instrument if context else None
+        quote_asset = (getattr(instrument, "quote_currency", None)
+                       or getattr(config, "account_currency", None) or "USDT")
+        capital = self._decimal_or_default(
+            await self._maybe_await(self._sizer.get_available_capital(quote_asset)),
+            Decimal("10000"),
         )
+        if capital <= Decimal("0"):
+            capital = Decimal("10000")
+        step_size = getattr(instrument, "volume_step", None)
+        if step_size is None:
+            step_size = self._decimal_or_default(
+                await self._maybe_await(self._sizer.get_step_size(symbol)), Decimal("0.001"))
+        risk_pct = self._decimal_or_default(getattr(config, "risk_per_trade_pct", None), Decimal("1"))
+        leverage = self._decimal_or_default(getattr(config, "leverage", None), Decimal("1"))
+        try:
+            sizing = self._sizer.calculate(
+                capital=capital,
+                risk_pct=risk_pct,
+                entry_price=entry_price,
+                stop_loss_price=stop_loss_price,
+                step_size=step_size,
+                min_quantity=getattr(instrument, "min_volume", None),
+                max_quantity=getattr(instrument, "max_volume", None),
+                leverage=leverage,
+            )
+        except PositionSizingError as exc:
+            return RiskCheckResult(approved=False, reason=str(exc))
         logger.info(
             "[risk] Aprovado: %s | qty=%s | risco=%s USDT (%.2f%%)",
             symbol, sizing.quantity, sizing.risk_amount, float(sizing.risk_pct),

@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import threading
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Optional
 
 import joblib
@@ -13,6 +14,7 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 MIN_CONFIDENCE = 0.60
+MODELS_DIR = Path(__file__).parent / "models"
 
 
 @dataclass
@@ -24,6 +26,15 @@ class PredictionResult:
 
 class ModelNotFoundError(Exception):
     """Nenhum modelo ativo encontrado para o símbolo."""
+
+
+def _trusted_model_path(path_value: str | Path) -> Path:
+    """Permite desserialização somente de artefatos dentro do diretório local."""
+    root = MODELS_DIR.resolve()
+    path = Path(path_value).resolve()
+    if not path.is_relative_to(root):
+        raise ModelNotFoundError(f"Artefato de modelo fora do diretório confiável: {path}")
+    return path
 
 
 @dataclass
@@ -69,8 +80,12 @@ class ModelPredictor:
                 f"Nenhum modelo ativo encontrado para {symbol}"
             )
 
-        model = joblib.load(record.file_path)
-        scaler = joblib.load(record.scaler_path) if record.scaler_path else None
+        model = joblib.load(_trusted_model_path(record.file_path))
+        scaler = (
+            joblib.load(_trusted_model_path(record.scaler_path))
+            if record.scaler_path
+            else None
+        )
         feature_columns: list[str] = record.feature_list.get("columns", [])
 
         with self._lock:

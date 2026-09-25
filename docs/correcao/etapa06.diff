@@ -1,0 +1,30 @@
+diff --git a/backend/ml/trainer.py b/backend/ml/trainer.py
+@@ perfil didi em _resolve_profile_config
+-                "skip_performance_gates": True,
++                "skip_performance_gates": False,
++
++diff --git a/backend/ml/predictor.py b/backend/ml/predictor.py
++@@ carregamento de modelos
+++MODELS_DIR = Path(__file__).parent / "models"
+++
+++def _trusted_model_path(path_value: str | Path) -> Path:
+++    root = MODELS_DIR.resolve()
+++    path = Path(path_value).resolve()
+++    if not path.is_relative_to(root):
+++        raise ModelNotFoundError(f"Artefato de modelo fora do diretório confiável: {path}")
+++    return path
++@@ load_model
++-        model = joblib.load(record.file_path)
++-        scaler = joblib.load(record.scaler_path) if record.scaler_path else None
+++        model = joblib.load(_trusted_model_path(record.file_path))
+++        scaler = joblib.load(_trusted_model_path(record.scaler_path)) if record.scaler_path else None
++
++diff --git a/backend/tests/unit/test_regressions_pending.py b/backend/tests/unit/test_regressions_pending.py
++@@ test_didi_rejects_bad_validation_metrics
++-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="F05 / etapa 06: DiDi aprova folds reprovados")
++ async def test_didi_rejects_bad_validation_metrics(monkeypatch):
++@@
+++def test_predictor_rejeita_modelo_fora_do_diretorio_confiavel(tmp_path):
+++    from ml.predictor import ModelNotFoundError, _trusted_model_path
+++    with pytest.raises(ModelNotFoundError, match="fora do diretório confiável"):
+++        _trusted_model_path(tmp_path / "external.pkl")

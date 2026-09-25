@@ -9,6 +9,8 @@ from typing import Optional
 
 import pandas as pd
 
+from trading.contracts import CapabilityUnavailable
+
 logger = logging.getLogger(__name__)
 
 DATA_DIR = Path(__file__).parent / "data"
@@ -38,8 +40,27 @@ class MT5DataCollector:
     ao invés da Binance/CCXT. Compatível com Mac/Linux (sem lib MetaTrader5).
     """
 
-    def __init__(self, mt5_files_dir: str) -> None:
+    def __init__(
+        self,
+        mt5_files_dir: str,
+        *,
+        supported_symbols: Optional[set[str] | list[str]] = None,
+    ) -> None:
         self._mt5_files_dir = mt5_files_dir
+        self._supported_symbols = set(supported_symbols or ())
+
+    def validate_symbol(self, symbol: str, market: str) -> None:
+        """Exige símbolo descoberto no instrumento/venue MT5 configurado."""
+        if market not in {"FOREX", "B3"}:
+            raise CapabilityUnavailable(f"Venue MT5 inválido ou ausente: {market!r}")
+        if not symbol or (self._supported_symbols and symbol not in self._supported_symbols):
+            raise CapabilityUnavailable(
+                f"Símbolo MT5 não suportado ou ambíguo para {market}: {symbol!r}"
+            )
+        if not self._supported_symbols and "/" in symbol:
+            raise CapabilityUnavailable(
+                f"Símbolo sintético exige contexto explícito de instrumento: {symbol!r}"
+            )
 
     # ------------------------------------------------------------------
     # Download principal
@@ -68,6 +89,7 @@ class MT5DataCollector:
     async def _download_async(
         self, symbol: str, timeframe: str, market: str, n_bars: int
     ) -> pd.DataFrame:
+        self.validate_symbol(symbol, market)
         from trading.connectors.dwx import DWXConnector
 
         tf_dwx = TIMEFRAME_MAP.get(timeframe, timeframe.upper())

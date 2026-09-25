@@ -57,6 +57,10 @@ class PositionSizer:
         entry_price: Decimal,
         stop_loss_price: Decimal,
         step_size: Decimal,
+        min_quantity: Decimal | None = None,
+        max_quantity: Decimal | None = None,
+        leverage: Decimal = Decimal("1"),
+        max_position_pct: Decimal = Decimal("10"),
     ) -> PositionSizeResult:
         """
         Calcula o tamanho da posição com base no risco fixo por trade.
@@ -68,7 +72,8 @@ class PositionSizer:
             quantity      = floor(quantity_raw / step_size) * step_size
 
         Limites:
-            - quantity * entry <= capital * 10%
+            - quantity * entry <= capital * max_position_pct% * leverage
+            - min_quantity <= quantity <= max_quantity, quando informados
             - capital > 0
             - stop_distance > 0
 
@@ -77,10 +82,22 @@ class PositionSizer:
         """
         if capital <= Decimal("0"):
             raise PositionSizingError("Capital deve ser positivo.")
+        if risk_pct <= Decimal("0"):
+            raise PositionSizingError("Percentual de risco deve ser positivo.")
         if entry_price <= Decimal("0"):
             raise PositionSizingError("Preço de entrada deve ser positivo.")
         if step_size <= Decimal("0"):
             raise PositionSizingError("Step size deve ser positivo.")
+        if leverage <= Decimal("0"):
+            raise PositionSizingError("Alavancagem deve ser positiva.")
+        if max_position_pct <= Decimal("0"):
+            raise PositionSizingError("Percentual máximo de posição deve ser positivo.")
+        if min_quantity is not None and min_quantity <= Decimal("0"):
+            raise PositionSizingError("Quantidade mínima deve ser positiva.")
+        if max_quantity is not None and max_quantity <= Decimal("0"):
+            raise PositionSizingError("Quantidade máxima deve ser positiva.")
+        if min_quantity is not None and max_quantity is not None and min_quantity > max_quantity:
+            raise PositionSizingError("Quantidade mínima maior que máxima.")
 
         stop_distance = abs(entry_price - stop_loss_price) / entry_price
         if stop_distance < Decimal("0.001"):
@@ -95,15 +112,24 @@ class PositionSizer:
         quantity_raw = risk_amount / (entry_price * stop_distance)
         quantity = (quantity_raw / step_size).to_integral_value(ROUND_DOWN) * step_size
 
-        # Cap: máximo 10% do capital
-        max_position_value = capital * Decimal("0.10")
+        # Cap: máximo configurado do capital, ajustado pela alavancagem validada.
+        max_position_value = capital * (max_position_pct / Decimal("100")) * leverage
         if quantity * entry_price > max_position_value:
             quantity = (
                 (max_position_value / entry_price / step_size).to_integral_value(ROUND_DOWN)
                 * step_size
             )
             logger.info(
-                "Posição limitada a 10%% do capital: %.6f unidades.", float(quantity)
+                "Posição limitada a %s%% do capital com alavancagem %s: %.6f unidades.",
+                max_position_pct, leverage, float(quantity)
+            )
+
+        if max_quantity is not None and quantity > max_quantity:
+            quantity = (max_quantity / step_size).to_integral_value(ROUND_DOWN) * step_size
+
+        if min_quantity is not None and quantity < min_quantity:
+            raise PositionSizingError(
+                f"Quantidade calculada ({quantity}) abaixo do mínimo permitido ({min_quantity})."
             )
 
         if quantity <= Decimal("0"):

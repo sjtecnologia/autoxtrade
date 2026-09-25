@@ -67,7 +67,6 @@ def test_detecta_gap_grande():
     assert len(report.large_gaps) >= 1
 
 
-@pytest.mark.xfail(strict=True, reason="F12 / etapa 05: gap pequeno não preenchido")
 def test_detecta_gap_pequeno():
     """Gap de 2 candles consecutivos → small_gaps_filled."""
     df = _make_df(20, "1h")
@@ -79,6 +78,7 @@ def test_detecta_gap_pequeno():
 
     assert report.small_gaps_filled > 0
     assert len(report.large_gaps) == 0
+    assert len(result) == 20
 
 
 def test_df_vazio_retorna_vazio():
