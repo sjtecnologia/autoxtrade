@@ -35,6 +35,11 @@ class OrderMonitor:
         )
         open_trades = result.scalars().all()
         report = await reconcile_positions(self._conn, open_trades)
+        logger.info(
+            "[monitor] positions source availability=%s detail=%s",
+            report.positions_health.availability,
+            report.positions_health.detail or "-",
+        )
         for issue in report.issues:
             logger.warning("[monitor] Reconciliation issue: %s", issue)
         return report

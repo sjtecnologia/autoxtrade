@@ -1,8 +1,15 @@
 """Read-only reconciliation between system state and connector state."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Iterable
 
 from trading.safety import ExposureBlocked
+
+
+@dataclass(frozen=True)
+class SourceHealth:
+    source: str
+    availability: str
+    detail: str | None = None
 
 
 @dataclass(frozen=True)
@@ -18,6 +25,9 @@ class ReconciliationIssue:
 @dataclass(frozen=True)
 class ReconciliationReport:
     issues: tuple[ReconciliationIssue, ...]
+    positions_health: SourceHealth = field(
+        default_factory=lambda: SourceHealth("positions", "ok")
+    )
 
     @property
     def has_issues(self) -> bool:
@@ -36,11 +46,16 @@ async def reconcile_positions(connector, trades: Iterable[object]) -> Reconcilia
     """
     issues: list[ReconciliationIssue] = []
     system_trades = _open_trades(trades)
+    health_factory = getattr(connector, "positions_source_health", None)
+    positions_health = health_factory() if callable(health_factory) else SourceHealth("positions", "ok")
     try:
         connector_positions = await connector.list_positions()
         connector_orders = await connector.list_pending_orders()
     except ExposureBlocked as exc:
-        return ReconciliationReport((ReconciliationIssue("connector_unavailable", detail=str(exc)),))
+        return ReconciliationReport(
+            (ReconciliationIssue("connector_unavailable", detail=str(exc)),),
+            positions_health,
+        )
 
     trades_by_position = {
         str(trade.position_id): trade for trade in system_trades if getattr(trade, "position_id", None)
@@ -80,4 +95,4 @@ async def reconcile_positions(connector, trades: Iterable[object]) -> Reconcilia
             issues.append(ReconciliationIssue(
                 "orphan_connector_order", order_id=order_id, symbol=getattr(order, "symbol", None)))
 
-    return ReconciliationReport(tuple(issues))
+    return ReconciliationReport(tuple(issues), positions_health)

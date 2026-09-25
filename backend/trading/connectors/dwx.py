@@ -21,6 +21,7 @@ import os
 import threading
 import time
 from decimal import Decimal
+from pathlib import Path
 from os.path import exists, join
 from traceback import print_exc
 from typing import Any
@@ -71,7 +72,11 @@ class DWXConnector(SimulatedConnector):
         self._bind(context, transport)
         self.prices = transport.prices if transport is not None else {}
         self._dir = mt5_files_dir
-        self._dwx_dir = join(mt5_files_dir, "DWX")
+        configured_dir = Path(mt5_files_dir).expanduser()
+        self._dwx_dir = str(
+            configured_dir if configured_dir.name.upper() == "DWX"
+            else configured_dir / "DWX"
+        )
         self._sleep = sleep_delay
         self._max_retry = max_retry_s
         # Usa offset baseado em timestamp para evitar reutilizar IDs já
@@ -106,6 +111,31 @@ class DWXConnector(SimulatedConnector):
 
     async def close(self) -> None:
         self.retire()
+
+    def probe_files_read_only(self, *, now=None, freshness_window_seconds: int = 3600):
+        """Inspeciona o share DWX sem criar comandos ou alterar seu conteúdo."""
+        from trading.dwx_probe import probe_dwx_directory
+
+        return probe_dwx_directory(
+            self._dwx_dir,
+            now=now,
+            freshness_window_seconds=freshness_window_seconds,
+        )
+
+    def positions_source_health(self):
+        from trading.reconciliation import SourceHealth
+
+        positions = list(Path(self._dwx_dir).glob("DWX_Positions_*.txt"))
+        if not positions:
+            return SourceHealth(
+                "positions",
+                "missing",
+                "DWX_Positions_* ausente; posições não são inferidas como zero",
+            )
+        newest = max(path.stat().st_mtime for path in positions)
+        if time.time() - newest > 3600:
+            return SourceHealth("positions", "stale", "DWX_Positions_* sem atualização na última hora")
+        return SourceHealth("positions", "ok")
 
     async def get_balance(self) -> dict[str, Balance]:
         self._check_use(Capability.QUERY)
@@ -193,12 +223,30 @@ class DWXConnector(SimulatedConnector):
 
     async def list_positions(self):
         self._check_use(Capability.POSITIONS)
-        self._transport.refresh()
+        if self._transport is None:
+            return []
+        if hasattr(self._transport, "refresh"):
+            self._transport.refresh()
         return await super().list_positions()
 
     async def list_pending_orders(self):
         self._check_use(Capability.PENDING)
-        self._transport.refresh()
+        text = self._read_file(self._path_orders)
+        if text:
+            try:
+                data = json.loads(text)
+                orders = data.get("orders", data) if isinstance(data, dict) else {}
+                if isinstance(orders, dict):
+                    self.open_orders = orders
+                    return [self._build_order(str(ticket), order) for ticket, order in orders.items()]
+            except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                raise CapabilityUnavailable(
+                    f"DWX_Orders.txt inválido; reconciliação de ordens indisponível: {exc}"
+                ) from exc
+        if self._transport is None:
+            return []
+        if hasattr(self._transport, "refresh"):
+            self._transport.refresh()
         return await super().list_pending_orders()
 
     async def get_current_price(self, symbol: str) -> Decimal:

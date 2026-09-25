@@ -36,6 +36,9 @@ class DataQualityReport:
         self.out_of_order_detected: bool = False
         self.stale_data: bool = False
         self.freshness_age_seconds: float | None = None
+        self.market_data_missing: bool = False
+        self.market_data_source: str | None = None
+        self.missing_sources: list[str] = []
 
     @property
     def large_gaps_detected(self) -> int:

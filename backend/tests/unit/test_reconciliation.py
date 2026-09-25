@@ -85,3 +85,18 @@ async def test_reconciliation_blocked_environment_is_signaled_without_mutation()
     connector.place_order.assert_not_called()
     connector.reduce_position.assert_not_called()
     connector.cancel_order.assert_not_called()
+
+
+async def test_reconciliation_exposes_missing_positions_source():
+    from trading.reconciliation import SourceHealth, reconcile_positions
+
+    connector = SimpleNamespace(
+        positions_source_health=lambda: SourceHealth("positions", "missing", "DWX_Positions_* ausente"),
+        list_positions=AsyncMock(return_value=[]),
+        list_pending_orders=AsyncMock(return_value=[]),
+    )
+
+    report = await reconcile_positions(connector, [])
+
+    assert report.positions_health.availability == "missing"
+    assert report.issues == ()
