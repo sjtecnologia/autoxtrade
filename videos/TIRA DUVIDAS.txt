@@ -1,0 +1,636 @@
+Recording 0
+
+[0:00:00] Speaker 1: Vamos lá pra aulinha. Eu queria falar algumas coisas com vocês pra gente começar. Como é que a gente vai tocar isso daqui, pra que a coisa fique viável pra todo mundo. Primeiro lugar: a gente tem que responder a todo mundo que tenham perguntas a respeito de gráfico e dependendo do nível que a pessoa esteja, vamos dizer, de entendimento ou não. Eu vou responder a todo mundo. Segunda coisa: a gente vai começar a falar, vai ter as perguntas, o Sérgio vai passando, a gente vai responder todo mundo que fizer uma pergunta.
+
+Se o cara chegar atrasado e perguntar uma coisa que a gente já respondeu, nós não vamos responder de novo. Porque senão, toda hora nós vamos ter que repetir, então a gente não vai conseguir evoluir o assunto, porque a gente vai ficar repetindo pergunta e resposta pra todo mundo. Então chegou atrasado, já respondemos: "José ou Carlos, assiste a live, porque está respondido isso anteriormente. Aqui você não estava na live. Ou se estava, não prestou atenção. E se não prestou atenção, olha lá a live", etc.
+
+Pra que a gente possa evoluir. O objetivo aqui, pessoal, é eu responder pra vocês a respeito de grafiquês, de análise técnica, de gráfico. Ou alguma dúvida a respeito de trade, etc. O que for dúvida, por exemplo, a respeito de plataforma. Nós temos coisas pra ajudar o pessoal? Temos. Mas o seguinte: quem é que tem que falar com vocês a respeito de plataforma? É a plataforma, é o vendor. Botar uma luzinha aqui.
+
+Se você, por exemplo, quer saber como é que bota a ordem no home broker da corretora, você tem que ligar pra corretora, porque tem aí, sei lá, 200 corretoras, como é que nós vamos saber de tudo? Então dúvida de como botar as coisas, as ordens, etc. A gente ajuda, nós temos lá alguns módulos, uns cursos que vocês podem achar na entrada do curso, onde a gente tenta ajudar as pessoas. Mas também sinta-se à vontade.
+
+Na hora que tiver problema com o gráfico. Quem é o seu vendor? É o Profit, é o TradingView, é a Broadcast, é isso, aquilo. Meu, liga pro cara, ele é o cara que mais sabe daquilo ali. Entendeu? Ele é o cara que sabe mais. Então, tem que ligar pro cara e perguntar. A gente ajuda? Ajuda, mas não é a nossa expertise, não é o nosso objetivo. Não é isso que a gente quer. A gente quer gráfico. Instalação do modelo etc.
+
+O Sérgio instala. Aliás, hoje eu vou trazer aqui um garoto só pra apresentar eles a vocês. Que é o rapaz, o Igor lá da Equity. Que é a corretora que a gente colocou pro pessoal se jogar pra dentro, porque o garoto vai atender vocês em português. Que quem tem conta em corretora lá fora sabe como é que é, na hora que precisa falar alguma coisa etc, é uma desgraça. Até você falando inglês. Então, pessoal, eu quero dúvidas de gráfico.
+
+Tentem ser claros na sua pergunta. Tem muitas vezes que o pessoal faz pergunta que a gente não consegue entender o que foi. Tá legal? Faça uma pergunta direcionada e vamos falar de gráfico aqui. Ok, pessoal? Sérgio consegue ver quantas pessoas tem?
+[0:04:06] Speaker 2: Até agora tem 60 pessoas.
+[0:04:08] Speaker 1: Sessenta pessoas. Você vê como vem pouca gente. Eu vejo depois gente reclamando, aí eu entro aqui pra ver se o cara fez o curso, o cara não fez o curso. Está até a quarta aula e está falando que o curso é uma porcaria. Vê se o cara está na aula de recuperação. Não está também. Outra coisa, pessoal, olha só. Quem aí não estiver ainda com uma plataforma instalada, já está superatrasado. Vai ligar amanhã pra resolver isso.
+
+Amanhã pra resolver isso. Quem ainda não tem conta em corretora onde vai operar, vai começar o treinamento, também temos que resolver isso. Porra, você comprou a porra do curso pra quê? Então, o prazo pra gente resolver isso é já. Está valendo lá o negócio dos 30 dias, tem que fazer o curso pelo menos cinco vezes, tem que assistir às aulas, etc. E a gente vai botar você pra operar, o objetivo é esse.
+
+O Sérgio já está organizando aí uma sala onde a gente vai ter sala de Forex, a gente vai ter sala de CFD. A gente vai ter uma sala de cripto e uma sala de equities, bolsas, etc. E índice Brasil. Então aí o pessoal vai ter a oportunidade de participar. E pra começar, pra se inspirar e fazer o primeiro trade. E aí o trade vai acontecer: "Olha, eu estou entrando nesse trade, porque o ADX está assim, o bollinger está assim", eu estou entrando Eu acho que vai ser bom a tendência é máxima.
+
+Eu fiz uma cagada semana passada nesse Bitcoin. E um aluno me chamou a atenção depois: "Mas você não estava vendido de dia?" Porra! Mas às vezes, rapaz, a gente começa a achar que a gente é bom demais. Não quer perder uma agulhada, o olho cresce. Mas é do game, tudo bem. Então vamos lá, Sérgio.
+[0:06:31] Speaker 2: Vamos lá, pessoal. Vamos lá vendo a pergunta aqui, Samuel: "Quando escolho um tempo de operação, cinco minutos, ele vai encerrar sozinho ou preciso colocar os stops?" Falando do MT5. "E se eu colocá-los, a operação tem um tempo a mais do que os cinco minutos pra fechar?"
+[0:06:50] Speaker 1: Olha só, Samuel, você precisa olhar de novo a aula a respeito que eu falo de como o gráfico é formado, etc. Porque os cinco minutos que a gente fala, que é o time frame, é pra dizer qual foi o tempo gráfico que o gráfico foi construído. Em base de que tempo gráfico? É de cinco minutos, 10, 15, diário. Agora, uma operação de cinco minutos pode levar uma hora, duas horas, pode passar pra outro dia até.
+
+Você entendeu? Não quer dizer que nós vamos ficar cinco minutos na operação. De maneira nenhuma. Está legal? Agora, stop a gente deve colocar sempre, meu amigo. Sempre a gente deve botar stop. Operar sem stop loss não é bom pra galera não. Eu sempre falo, eu estou há 45 anos nessa porcaria. Já vi gente ganhar muito dinheiro de pancada assim, 20 milhões de dólares num dia, perdia 15 no outro, ganhava 25 no outro, perdia mais 10 no outro.
+
+Uns números assim que você fala: "Pelo amor de Deus". E eu moleque ficava vendo aqui e ficava louco. Agora, eu nesses 45 anos, bicho, eu não vi ninguém que tenha ficado rico, pobre, rico, pobre e que tenha continuado rico sem usar stop loss. Então stop loss é importantíssimo. Trailing stop é importante, se você não quer ficar colado na máquina. Nível de parcial, se você não quer ficar colado na máquina, mas se você pode passar ordem pra um corretor numa mesa onde ele vai observar ou se você pode ficar olhando, a conversa já é outra.
+
+Se não, você vai colocar os stops, sim. Está legal? Vamos lá, Sérgio, próxima.
+[0:08:46] Speaker 2: Vamos lá. Luke: "Estou operando Forex com lote 0.2 a 0.3 em tempos maiores e já estou há cinco dias no positivo, lucrando de 10 a 30 dólares por dia."
+[0:09:01] Speaker 1: Olha só, Luke Card, deixa eu falar uma coisa pra você. Primeiro lugar, parabéns! É legal, qual o CST dele será? Vamos botar uma coisa, pras pessoas quando entrarem, Sérgio, da próxima vez, dizer qual o CST.
+[0:09:20] Speaker 2: Tá.
+[0:09:20] Speaker 1: Você entendeu? Vê como é que faz pra gente poder ter isso. Então, velho, deixa eu te falar uma coisa, você está operando com 02, 03. Desculpe, você está operando com nada, você está treinando. É isso aí. Lucrando de 10 a 30 por dia, porra, está lindo. Deixa eu falar uma coisa pra vocês, que vocês não se tocam. Pega um aluno aí novato, não estou dizendo cara com experiência, pega aí um novato que tenha estudado bem, que tenha assimilado o método, que tenha entendido e que está operando há dois meses com essa porcaria aí.
+
+Meu irmão, você pode trocar o gestor que você quiser no Brasil. Você pode pegar o gestor mais pica que tem aí, que nego baba o saco de uns caras aí, que eu vou falar uma coisa pra você. Tudo bem, baba o saco de quem quiser. Eu acho uma bosta. Eu faço muito mais. Você está entendendo? E não é eu, não. Vocês fazem muito mais. Sem experiência, sem porra nenhuma. O cara faz muito mais. Imagina a rentabilidade que você está tendo, Luke.
+
+Parabéns, obrigado pelo depoimento aí. Vamos lá.
+[0:10:40] Speaker 2: Vamos lá. Esse aqui é outro que está falando aqui: "De digital incluindo o CST uma base sobre análise técnica, spread, alavancagem, stop, mais aulas práticas operando. Ajudaria muito os iniciantes a aprender com segurança."
+[0:11:01] Speaker 1: Olha só, cara, deixa eu falar uma coisa pra você, Luke. Cada um de vocês tem uma ideia, porque cada um de nós somos diferentes. Cada um de nós, na hora que assistiu o curso todo, tem um lugar onde ele tem uma fraqueza. E onde aquela pessoa tem aquela fraqueza, ele quer que eu faça isso, que eu faça aquilo pra suprir a fraqueza dele. Entendo. Só que se eu for fazer isso pra todo mundo, danou-se. Aí desculpa, eu não vou cobrar 1500 cruzeiros de vocês.
+
+Vou cobrar 10, 15 pau. Você entendeu? Porque, bicho, o Sérgio trabalha comigo há 20 anos, 20 porrada. Nós mandamos os bancos tudo embora. Nós mandamos a consultoria pro cacete, primeiro foi os física. Você está entendendo? Banco que pagava menos de 10 mil, a gente mandou embora. E depois mandamos os outros, de 30, de 25, mandamos tudo embora. Você está entendendo? Por quê? Porque encheu o saco de ficar respondendo coisa.
+
+Sabe? O dia inteiro. Eu estou há 45 anos respondendo, é foda
+[0:12:08] Speaker 2: Não, mas o stop está mencionado no curso. É porque quando ele fala de alavancagem e spread, são as corretoras de cripto. De cripto não.
+[0:12:18] Speaker 1: Olha só.
+[0:12:19] Speaker 2: Isso daí ele pode tirar com o carinha que vai vir mais tarde.
+[0:12:24] Speaker 1: Isso. Você pode falar disso, por exemplo, com o garoto. O Igor fala português e vai ser um contato de vocês para ajudar vocês a abrir conta, se vocês quiserem abrir lá, ninguém é obrigado, é para quando você quiser. Que ele vai falar com vocês em português. Está aqui.
+[0:12:58] Speaker 2: Posso seguir, Vivi?
+[0:12:59] Speaker 1: O Ricardo Matias estava respondendo o cara. Agora o seguinte, o Luke, a gente vai gravar alguma coisa aí, é que as pessoas não querem acreditar o quanto é simples, porque o que eu faço na hora de operar é o que eu faço aqui com vocês, é igual. É pegar, olhar os gráficos. Então vamos fazer uma coisa, Sérgio? Deixa eu compartilhar essa tela aqui. Deixa eu ver quando é que é. Olha só, pessoal, para quem está muito voando, eu vou fazer uma coisa que eu acho que pode ajudar um bocado de gente aí.
+
+Como é que você vai começar? Vamos lá. Então o que eu quero fazer: apresentar, compartilhar tela, essa daqui, tufe, compartilhar. Ok, pessoal. Então eu cheguei em casa agora, eu vou operar, eu sou um cara que opera no diário, eu estou fazendo swing trade. Então eu vou botar aqui o tempo do diário. Ok? Botei lá o tempo diário. Deixa eu tirar o fio que tinha ali bem curtinho. Botei lá o diário. Primeiro lá em cima, vamos dizer que esses aqui, pessoal, sejam os ativos que eu quero tomar conta, que eu quero ver se estão bacanas, se não estão, etc.
+
+Vamos dizer também que eu tenho alguns desses papéis aí. Então eu vou analisar os papéis. Para quê? Para ver se tem alguma coisa boa para eu entrar. O que eu faço? Eu boto um pedaço de papel do lado, uma caneta, é que eu sou velho, eu faço assim. Com uma caneta eu anoto o nome do papel, se por acaso tiver alguma coisa legal para fazer, que às vezes aparecem muitos e eu não tenho dinheiro para todos.
+
+Então o que acontece? Eu vou lá e escolho entre aqueles ali. Vou fingir que é isso daqui, vamos lá. Estou vendo ali o índice. O que tem do índice? Tem alguma coisa começando agora? Não, eu tenho uma venda que plotou venda ali nos indicadores, mandou sair da compra. Mas ainda não tenho aqui tendência de venda, nem venda aqui, nem aqui, aqui já vendeu. Aqui já vendeu, já estou vendido aqui, mas eu não tenho tendência, aqui eu ainda não tenho venda.
+
+Aqui já vendeu. Eu não tenho aqui uma coisa que eu diga assim para você: "olha, que legal!" Eu até acho, se você me perguntar, que essa porcaria perdeu esse topo aqui. Provavelmente vai vir batendo nesses topos todos, mas essa porcaria teria que voltar aqui. Está legal? Então esse aqui é o número que essa porcaria volta se encaixar. Tem alguma coisa de muito legal para eu entrar agora? Eu não vejo, eu quero uma coisa bem bacana, bem bonita.
+
+Então eu vou ver aqui agora o dólinha. Tem alguma coisa legal começando? Não tem nem tendência. Eu já passo logo pra frente. CSN. A CSN está com uma venda encaixorrada. Deu agulhada de compra, olha lá que legal. Deu agulhada de compra ali, o pai estourou, vendeu de novo. E agora está querendo ganhar ali uma tendência de venda. Onde é que essa porcaria deve vir? Aqui embaixo também, nos 8,20. Está legal?
+
+São as minhas cantadas para esse negócio. O que eu estou procurando, pessoal? Uma coisa que possa estar começando agora. Então essa daqui, por exemplo, CASH3. Ela está sentando aí, bem possível que ela faça um levante até essa altura aqui, 3,50 mais ou menos. Se voltar a sentar, a gente vai ter um ombro cabeça a ombro e na hora que perder aqui, imagina que ele vai fazer o outro ombro aqui. Está legal?
+
+Aqui do ladinho assim. Feito esse, fazer outro aqui. A gente teria um ombro cabeça a ombro e, deixa eu tirar essa porcaria daqui. Qual seria o neckline disso daí ou o sovaco line disso? Seria uma coisa aqui assim. Está legal? E qual seria o tamanho da derrubada caso acontecesse? Isso é legal para quê, pessoal? Olha só. A gente fica com esse pensamento pronto do que pode acontecer nesse papel. E se por acaso começar a acontecer, o rompimento seria aqui mais na frente, que ainda tinha que fabricar o ombro aqui.
+
+Mas se por acaso isso aí acontecer, nós temos dois objetivos papéis, ele perdendo aqui os 3,19 Óbvio também, pessoal, que eu não preciso entrar vendendo a 13,19, nem feito posto de gasolina, a 13,18 e 13,19. Também não. Eu posso vender isso um pouco mais pra baixo, um pouco mais tranquilo. Posso até deixar perder aqui se eu quiser, que aí eu ganho de 3,03 até a 2,70, 2,78, tá bom. Ganhei 25, tá legal.
+
+O papel custa 3,20, você ganha 25 cents tá do cacete. Então, fica ali projetado no teu gráfico e você todo dia quando você olhar, você vai ver se ele está formando outro ombrinho. Então já sabe, se perder o ombrinho aqui, pau que pó aqui. Primeiro objetivo, 2,71, o segundo objetivo 2,55, 2,56. Lembrando que se o papel vai a 2,55, nós não vamos comprá-lo a 2,55. Nós vamos comprar a 2,58, a 2,60. E se a gente tiver que vender o papel a 3,20, nós vamos vendê-lo a 3,18, a 3,15 e está muito bom.
+
+Tá legal? Bom, então essa CASH3, eu posso deixar anotado um papelzinho do lado, eu estou escrevendo aqui, depois eu vou mostrar meu papelzinho. Ombro, cabeça, ombro, que está perdendo a 3,20 e projeto, eu esqueci os números já, 2,78 e o outro número 2,53. Sérgio, está aparecendo a minha cara aí também ou não?
+[0:19:56] Speaker 2: Tá.
+[0:19:57] Speaker 1: Tá? Então, pessoal-
+[0:20:03] Speaker 2: Deixa eu botar-
+[0:20:05] Speaker 1: Fala, Sérgio, desculpa.
+[0:20:07] Speaker 2: Tu vais mostrar alguma coisa agora?
+[0:20:09] Speaker 1: Não, vai ser rapidinho, pode ser assim mesmo. O que eu botei lá, olha, CASH3, ombro, cabeça, ombro, perde nos 3,20, objetivo a 2,78 e 2,53. Pronto, guardei. O que eu vou fazer agora, pessoal? Vou olhar outro papel, LIGHT. A LIGHT tem alguma coisa de muito legal? Tem. Aqui tem uma coisa de legal, pessoal. Olha, que nós tivemos aqui o ponto falso. O ponto falso serve pra quê, pessoal? Já dando a aulinha.
+
+Então o Sérgio na hora que me perguntar disso, já vai estar respondido. Então pintando aí um ponto falso. Esse ponto falso aí diz o quê? O que o ponto falso diz pra gente? "Olha, se você está numa posição, continua nela, porque essa indicação que está dando é falsa". E sempre essa indicação é contrária à tua posição. Está dizendo que é falso, então é pra você continuar na sua posição. Outra coisa que ele diz pra você é o seguinte: isso é um ponto falso.
+
+Se você quiser aumentar sua posição, a tua aposta, a hora é essa, aproveita. E a terceira coisa que o ponto falso pode falar é o seguinte: "Perdeu a primeira, mané. Não perde a segunda, vamos nessa". Tá legal? Então LIGHT aí, eu anoto aqui. LIGHT3, eu tenho um ponto falso. Tá legal? Então fica legal aí o negócio. A coisa é compra de volta. O que eu vou fazer? Já que nós já estamos aqui no 5,33, eu vou deixar open 5,45, que aí o negócio explode.
+
+Então eu coloquei lá um ponto falso, que eu devo estar entrando no papel a 5,45. Até porque a 5,45, eu acho que essa tendência aqui já vai estar acelerando. Tá legal? Ok? Claro que tudo isso daqui depois, eu vou olhar qual é a minha tendência macro, não vamos esquecer. Mas eu estou só vendo aqui os papéis. Aí outro papel lá, ONCO3. Tá legal, está uma bosta. Olha só, dando aqui uma agulhada de compra, entrando tendência, tal, não sei o quê, cheio de barra negativa com o Bollinger paralelo já.
+
+Embora esteja aparecendo uma porção de coisa bonita aqui, eu vou ser sincero pra vocês. Embora, fica como aulinha, embora a gente não precise de Estocástico e de ticks pra entrar na operação, eu esperaria esse ticks. Sabe por que, pessoal? Eu acho que a gente com certeza tem uma divergência no Estocástico a gente já tem, devemos ter também uma divergência forte no IFR, que é o modelo gráfico que eu não falei pra vocês, não ensinei.
+
+E que então a coisa realmente, por ter essa divergência, a coisa pode vir a mixar. A tendência é dar uma subida feito deu aqui e volta a cair. Então eu vou ficar só de olho em ONCO3, uma possível agulhada. Tá legal? Uma possível agulhada. Ok. Vamos lá. Aí eu vou pro outro papel, TADI3. E aí vai, pessoal. Aí eu vou olhando os papeizinhos pra ver se tem algum que está começando uma coisa agora. Isso é o que eu estou tentando achar, na verdade, aqui pra vocês.
+
+Aí eu vou analisando os papéis. Olha esse aqui, esse aqui eu vou ficar de olho. Está doido pra perder, já perdeu aqui. Isso aqui está doido pra tomar um derrubão. Eu não estou nem olhando o que essa porra que é. É a Libra. Tá legal? É a Libra lá, GBP GBP. Tá doido para tomar um escorregão. O que eu diria que isso aí então se vai tomar escorregão? Porque olha aqui, a tendência está começando a subir.
+
+Aqui, pessoal, olha lá. O que está plotando ali? Tipo uma agulhada queijo minas. Aqui, o bicho não precisa, mas está vindo para a venda, esse aqui já vendeu, o Bollinger está abrindo e nós perdemos esse fundo. Porra! Aí nós temos uma oportunidade de estar vendendo o US Dollar, GBP. Nós temos que estar vendido a 076? Então nós estamos vendendo essa porra agora, foda-se. A 0.7670, eu estou vendendo essa porcaria.
+
+Onde eu acho que esse negócio vai? Bom, deixa eu tirar isso daqui. Eu vou fazer o quê? Eu vou fazer aquela fibada safada que eu faço. Então tem ali uma caixa de Gann, eu tenho duas coisas para fazer. Como foi aqui lateral, não teve aquela inclinação, eu vou soltar no meio desse range aí dos 50%, eu vou soltar os 50% no meio dessa ingria aqui. Tá legal? No meio dessa ingria. Então isso aí está me prometendo o quê?
+
+Como já perdeu aqui esse 76,79, 76,77, foda-se. Este negócio promete tomar um tombo até 75,05. Entrando essa agulhada, por quê? Isso aqui é uma projeção pequenininha que eu estou fazendo. Olha lá, é só perder esse pedaço aqui. Eu estou dizendo que venha até aqui. Pelo menos, aqui a gente tem fundo que vai ser mais provável. O que eu acho? Na hora que esse negócio encaixar, essa tendência perdendo ali como já está confirmando, esse negócio aqui sobe, essa agulhada aqui acontece, esse porcalhão aqui vende, esse negócio fica vendido e esse negócio aí vem engrossando essa venda.
+
+Está legal? Então isso aí seria uma oportunidadezinha para a gente. Aí eu vou olhando essa porcariada toda, vou achar algumas operações, aí de repente eu estava olhando esse aqui. O que é isso? HK50. Vai começar a rodar mais tarde, às 10h começa a ficar bom. Vamos dizer que eu cheguei lá no Australian Dollar. Eu queria achar um na venda. Que esteja entrando numa venda, que aí seria o cara que eu ia sair nesse momento.
+
+Você entendeu? Ou entrando numa compra para eu substituir o meu papel. Está legal? Então eu tenho um negócio desse, tem um negocinho que eu achei que é legal de fazer. O que eu vou fazer? O que foi? Agora eu vou ver o meu resumo aqui. O que eu vi aqui? Vamos lá. Botar ali no que eu achei bacana, na libra esterlina. Ok. O que eu vou fazer? Eu estou vendendo esse negócio aqui, onde é que eu quero botar o meu stop?
+
+Vou tirar isso daqui para ficar mais fácil da gente ver. Esse negócio não pode dizer que foi um falso rompimento e voltar a encher o saco por aqui? Poderia. Onde eu colocaria meu stop? Seria aqui, 0,77668. Claro que não, pessoal. Eu sempre vou botar um pentelhonesimo acima, porque aqui é o número que se ele quiser fazer essa cagada comigo, é aqui que ele vai voltar. Então eu não posso botar o stop aí, porque ele pode voltar no número e voltar a cair de novo.
+
+Chupando o dedo. Então eu não vou colocar o stop aqui não. O stop desse negócio eu vou botar aqui em cima a 0,7787. Está legal, pessoal? Deu para entender qual é a brincadeira? Bom, uma vez eu tendo na mão as coisas que eu quero fazer. O que eu quero comprar, o que eu quero vender, etc. Eu vou lá e vou colocar então na minha plataforma. Deixa eu fazer, interromper o compartilhamento. Deixa eu ver onde é que está aquela porra.
+
+Está aqui. Opa, voltamos. Está legal? Então a coisa é só isso, pessoal. Mais nada. É você falar: "Sérgio", o Sérgio é o teu corretor. "Sérgio, vende lá um lote cheio, médio, 1.0 nessa porra, mete 10, um lote de 10 e soca essa merda aí". "Ah, você não quer botar alavancagem?" "Eu não, quero porra nenhuma". Entendeu? Quero porra nenhuma. Está bom ali, já está divertido. Então vamos lá, Sérgio. Perguntas então, pessoal.
+[0:29:42] Speaker 2: Vamos lá. O Samuel aqui fala: "Se fosse possível aulas práticas operando o tempo de cinco, 15 e uma hora, podendo ser gravada".
+[0:29:51] Speaker 1: Deixa eu dizer uma coisa para você. Vocês querem que eu faça isso? Vocês querem pagar cinco pau cada um? Desculpa, bicho, o cara quer pagar 1500 cruzeiro e quer fazer uma faculdade de trade, não dá. Você entendeu? Não há condições. Desculpa, Samuel.
+[0:30:10] Speaker 2: Mas basicamente, o que tu falou ali, tu deveria estar olhando o diário 60 minutos. Se botar nos cinco minutos, seria a mesma coisa. A leitura do gráfico é exatamente a mesma coisa. E tem que ver se tem alguma coisa para fazer. Não é chegar assim: "Faz uma aula prática". Se não tiver nada, não vai ter operação para acontecer.
+[0:30:31] Speaker 1: A coisa que mais nego pede: "Didi, grava um trade para a gente". Na hora que você está aqui olhando, você está ali, você vê um negócio legal que você gostou, você quer, tu vai contar para os outros? A primeira coisa que tu quer fazer é operar aquela merda. Operou, tu já ficou olhando, daqui a pouco tu vai ver, já passou. Entendeu? Você nunca lembra de falar: "Que legal, vou gravar". Outra: "Faz uma aula prática".
+
+Eu faço uma aula prática, coloco vocês sentados ali, feito eu já fiz imersão. Você está entendendo? E não acontece nada. Mercado de merda. Você fica ali sentado assim. Então não é assim. É exatamente como eu fiz com vocês agora. Olhar ali os papeizinhos: "Tem um bonitinho aqui. Esse aqui está feio, então eu vou vender. Esse está bonito, eu vou comprar". E pronto, é leve, é divertido. O que vocês têm?
+
+Que decorar todas as linhas. Você vê que eu abro ali, eu bato o olho, já vejo o ombro cabeça ombro, já vejo a porra do ponto falso, já faço a projeção. Você vê que eu mexo em tudo que eu falo para vocês. Meti ali um fio para vocês verem, tracei um ombro cabeça ombro, deixei projetado. Então é isso. Você entendeu? E na hora que romper o número que for necessário de romper, você vai lá e executa a ordem.
+
+Você entendeu? O pulo do gato não é botar a ordem. Você entendeu? Botar a ordem até meu cachorro coloca, porra. Brincadeira, pessoal, eu não coloco, para você ter ideia. Mas é só mandar passar a ordem. Se você não coloca, você passa a ordem. Legal? É o que eu fiz aí, mais um telefone. Falou: "Vende aí, compra aqui, acabou". Vamos lá, Sérgio.
+[0:32:30] Speaker 2: Mais uma aqui: "Seria possível explicar um pouco mais sobre os tempos gráficos? Como usar o tempo gráfico maior para entrar na operação, como saber se o tempo gráfico menor é forte?"
+[0:32:40] Speaker 1: Vamos lá, ok. É isso aí, pergunta de gráfico. Olha só, cara, os tempos gráficos, você sabe que o tempo de 15 minutos é um resumo quatro vezes mais minucioso do que uma barra de uma hora. Porque quando eu tenho um gráfico de uma hora, tem quatro vezes 15 minutos. Então 15 minutos e uma hora vai desenhar quatro barrinhas. Então é um desenho mais detalhado daquela barra de 60. Sempre que a gente vai para um tempo gráfico menor, nós estamos nos tornando mais especuladores.
+
+Claro que em um gráfico de um minuto, vamos dizer, isso é mentira, que no gráfico de um minuto a operação leve cinco minutos. Chutando, vai. Entendeu? Cinco minutos, está legal. Quantas operações nós podemos ter no dia? Com seis horas de pregão. Entendeu? 72 operações. E no diário? Uma. E nos 60 minutos? Você entendeu? Então, o tempo gráfico fala diretamente de qual é o nosso perfil. Na hora que a gente escolhe um tempo gráfico, que a gente diz assim: "Não gosto de operar no 60, não gosto de operar no diário, não gosto de operar cinco minutos".
+
+Você está mostrando de que maneira você gosta de se comportar no mercado, qual é o seu objetivo, etc. Sempre que a gente abre também uma operação em um tempo gráfico, a gente deve fechar nele. "Mas o tempo neto virou a cara". Foda-se. O que é tempo pai, tempo filho, tempo neto? Vamos dizer que eu tenha lá os tempos gráficos de um, três, cinco, 15, 60, 120, diário, semanal, mensal. O um é filho. Quando eu estou falando de intraday, dois tempos é a tendência macro.
+
+Então a tendência macro do um seria um, três, cinco. Para mim, tendência macro é cinco. "Mas eu estou operando os cinco minutos". Tendência macro: 15, 60, dois tempos acima. Quando eu estou falando dos tempos longos, diário, semanal, mensal, um tempo acima só. Tendência macro semanal, mensal, ponto final. Está legal? Respondi o cara, Sérgio?
+[0:35:19] Speaker 2: Respondeu.
+[0:35:21] Speaker 1: Acho que respondemos, sim.
+[0:35:22] Speaker 2: Vamos lá. Paulo: "Didi, para mim ainda não está muito claro o ponto falso. Para isso, a média curta tem que ter cruzado a média central?"
+[0:35:29] Speaker 1: Deixa eu mostrar para você. Paulo?
+[0:35:33] Speaker 2: Isso.
+[0:35:36] Speaker 1: Está aqui. Paulo Rafael, desculpa. Deixa eu mostrar aqui. Nós vimos alguma coisa que tinha um ponto falso. O que era? Light três, ótimo.
+[0:35:47] Speaker 2: Compartilha aí.
+[0:35:50] Speaker 1: Compartilhando. Olha que beleza, ficou fácil a gente acabar de achar um. O que foi aqui o ponto falso? O ponto falso a gente vê no Didi. Você está vendo no momento em que está cruzando a linha azul, está cruzando a linha estirada, no momento em que boi azul se jogou para dentro do pasto do boi amarelo. O boi amarelo estava naquele momento correndo feito um louco para o lado do fundo do pasto Ele estava com medo do boi azul.
+
+Guarda essa regra: boi amarelo ou boi longo, como você quiser, na minha idade é média longa. Boi amarelo ou boi longo covarde, nós temos um ponto falso. E o ponto falso é exatamente isso. Observa que na hora que a azul está cortando a branca ali no meio, a amarela está correndo ali pro fundo. É isso que mostra pra gente que nós temos, então, o ponto falso. E olha só onde ele plotou o ponto falso pra você.
+
+Você está vendo onde ele plotou? Olha pro teu gráfico aqui do lado esquerdo. Você vê que a linha é a mesma. Olha onde ele plotou o ponto falso pra você. Na hora que ele plotou o ponto falso nessa barra, a gente vai lá e vamos operar. Então eu teria operado aqui no ponto falso, comprando aqui perto do fechamento dessa barra. Sempre a gente vai fechar, vai operar perto do fechamento. Se é um gráfico de diário, eu vou esperar faltar uns cinco minutinhos, três minutinhos pra fechar o pregão e vou lá operar.
+
+Então vamos dizer que eu operei no fechamento a 472, já está me dando resultado, está 517, já está legalzinho. Por quê? Só porque eu peguei o ponto falso. Tem uma porrada de maluco aí, eu não acho que deva fazer assim. Os caras ficam só pegando ponto falso, os caras só querem ponto falso, se apaixonaram. Eu estava fazendo uma live com o Stormer, Leandro Stormer, um cara sério de mercado. Tem poucas pessoas sérias no mercado.
+
+Ele é uma delas. Eu estava fazendo a live e eu apresentei o ponto falso. Ele era um dos inquisidores, vamos dizer assim. E o cara teve, em primeiro lugar, a hombridade, a decência, a humildade, pela pessoa que é. Ele passou a live inteira, bicho, adorando o ponto falso. Eu falei: "Didi, não acredito. Nossa senhora!" Pega uma live dele comigo, vocês vão ver. O cara ficou louco com os pontos falsos.
+
+E tem gente que só fica atrás de ponto falso. Vamos lá, Sérgio, o próximo.
+[0:38:55] Speaker 2: Vamos lá. "Luc, qual a importância de fazer parcial e zerar o stop no break even?"
+[0:39:02] Speaker 1: Fazer parcial?
+[0:39:03] Speaker 2: É.
+[0:39:04] Speaker 1: Velhinho, fazer parcial é vida, porque na hora que você faz uma parcial, vamos dizer que você comprou um negócio a 10, você acha que vai pra 15, o negócio está a 12, teu stop loss era a nove, você vendeu metade do lote com dois de lucro, você tinha um de prejuízo, ou seja, você pode passar teu stop agora pra 11 com o resultado que você tem. Se você entrou a 10, teu stop é a 11, você não perde mais.
+
+Isso tem um valor inestimável, porque você ganha uma tranquilidade de saber que não vai mais perder e a tua cabeça funciona muitíssimo bem. Inclusive pra você ver se por acaso romper algum número que você achava que não ia romper, você entrar na volta no trade. E se por acaso começar a devolver, você vai se stopar no zero a zero, com stop menor ou até no positivo. Você está entendendo? Então o que o imbecil aqui faz?
+
+Eu faço o trade do covarde. O que eu faço? Eu vou lá, eu quero comprar 50 lotes de índice, vamos dizer. Eu vou lá e compro 100. Comprei 100. Dá uma andadinha, eu tenho stop de 40 pontos, vamos dizer, estou chutando. O stop de 40 pontos, stop loss. Aí comprei lá o mercado, deu uma pancadinha, andou 100 pontinhos. Eu já vendo a metade, ou eu vendo 40% do lote só pra tampar o meu stop loss. Eu vendo o suficiente ali pelo menos, só pra trazer meu stop loss pro preço de entrada, porque na hora que eu faço isso, eu não tenho mais prejuízo.
+
+Então geralmente o que eu faço? Eu vou lá, entro dobrado, o mercado dá uma andadinha de nada, eu já um rato fujão, cagão. Vou lá já vendo a metade, fico com o lote que eu queria ficar. Está certo? Fico com o lote que eu queria ficar e estou ganhando dinheiro e já tenho algum no bolso. Então por isso que a gente faz. Deixa eu ver. "Tenho feito isso, stop há três dias seguidos, não sei se estou agindo certo ou por emoção".
+
+É, é isso aí. É o que eu falei. Está certinho, é isso aí, cara. Porque deixa eu te falar uma coisa, o importante é a gente ganhar, não é ficar se expondo, querendo ganhar muito. Quando ganha muito, parabéns, ótimo! Mas o importante é a gente ganhar, porque o ganhar deixa nossa cabeça boa. Quando você perde, principalmente o iniciante, fica superchocado. Você vai falar: "Didi, quando você perde, você não liga?" Claro que eu ligo.
+
+Fico 15 dias sem trepar. Mas eu vou falar uma coisa pra você também: estou cagando, porque, bicho, você não tem ideia quantas vezes eu já perdi. Nossa Senhora! Ainda bem que é perder só na bolsa. Pelo amor de Deus, entendeu? Tanto que eu já perdi de dinheiro. Se eu pudesse pegar de volta, nossa, eu comprava os Estados Unidos pra mim. Vamos lá, Sérgio.
+[0:42:15] Speaker 2: Vamos lá. Matheus: "Didi, estava fazendo vários cálculos esses dias e percebi que é possível fazer mais de 3% por dia com seu método. Melhor ainda quando é cripto. É possível fazer mais que isso por dia?"
+[0:42:28] Speaker 1: Matheus, deixa eu te falar uma coisa, cara. Primeiro lugar, parabéns, fazer 3% no dia é uma avacalhação Imagina que você tem 30 dias, você faz 3%, não vamos nem capitalizar esses 3%, senão aí vira sacanagem, a gente vai estar falando de 80% no mês, 75% no mês, capitalizar. Tá legal? Então vamos só botar aí no reto, com 20 dias de operação, se você faz 3%, você faz 60%. E nós estamos falando isso daí no mês.
+
+Me fala, qual é a porra do trader no Brasil fodido que faz isso? Não tem. Só a molecada daqui mesmo. Quer dizer, tem mais gente que faz, mas a molecada daqui faz mesmo. Então é o seguinte: renda variável, tem dia que dá pra fazer mais, tem dia que também não dá pra fazer os três, tem dia que você perde, aí no outro dia tu faz sete e aí vai. É isso daí, não dá pra gente querer ter o número. Se alguém quiser te dar o número, Matthew, está te sacaneando.
+
+Ou não sabe ou está querendo te enrolar.
+[0:43:42] Speaker 2: Vamos lá. Samuel: "Se eu vejo uma agulhada tendência Trix, estou no tempo de cinco minutos, a tendência serve pra esse tempo de cinco?"
+[0:43:51] Speaker 1: Isso aí. Vamos lá.
+[0:43:55] Speaker 2: Vamos lá, pergunta do Alan: "Minhas dúvidas são as seguintes: como medir a entrada e saída com Fibonacci no tempo gráfico? Estou tomando stop direto e a ação continua andando".
+[0:44:06] Speaker 1: Olha só. Bom, primeiro lugar: o que eu boto de Fibonacci ali, é quando você precisa projetar. Então não tem prejuízo pra você tomar, que a coisa já está acontecendo, certa dúvida. Você não mede entrada e saída, quando você mede é aquele jeito que eu fiz ali, botando no meio ou traçando a linha de sustentação pra que você possa botar o outro Fibonacci. Quando tem inclinação. Em vez de o mercado sair de lado, ele faz um pullbackzinho.
+
+O que a gente faz? Traça a linhazinha ali por baixo do pullbackzinho, pega o tamanho que tinha ali atrás e projeta a partir do lado do rompimento. Ok? É assim que a gente vai fazer. Se for lateral, é o efeito que você acabou de ver eu fazendo ali. Agora, a entrada e a saída no trade, bicho, não é no Fibonacci. A entrada não é no Fibonacci, velho. Fibonacci serve pra te projetar preço. A entrada é com DMI, com Bollinger, com Didi.
+
+A saída é com Bollinger, com DMI, com Trix, com Estocástico, pode ser com Didi se houver tendência. Tá legal? É por aí que você vai sair. Agora, esses números de Fibonacci estão te dando sugestões de onde o mercado deve estar indo. Se você está querendo operar Fibonacci, você está entendendo? Tem gente que opera, só que não é isso que eu ensinei. É legal? É. Só que eu acho que o meu negócio é muito melhor, porque o Fibonacci o cara acaba ficando preso aos Fibonacci, o cara acaba cuspindo trade onde eu não cuspo, eu vou embora e ganho muito mais.
+
+Entendeu? Vamos lá, então, Sérgio.
+[0:46:11] Speaker 2: Vamos lá. "Se o Candlestick me der o sinal de entrada, antecipando os gráficos ocidentais, você entra, Didi?"
+[0:46:18] Speaker 1: Olha, Vinícius, isso daí vai de uma série de reflexões, que a gente faz na hora. Porque toda vez que a gente vai operar, a gente fica conjecturando o que acontece, o que não acontece, o que te manda entrar, o que não manda entrar. Então o seguinte, o Candlestick te antecipa. Se por acaso eu tiver um bebê abandonado, um upside gap to the cross, eu não vou nem pensar. Eu vou tirar o tamanho que eu vou dar na testa.
+
+Você está entendendo? De uma maneira geral, na hora que você pega, por exemplo, uma Morning Star ou uma Evening Star, que são os inversos. São figuras que sugerem mildly. Sugerem levemente, sugestão leve, que você pegue uma confirmação. O bebê abandonado, o upside gap to the cross, é porrada. Você não tem que perguntar porra nenhuma pra ninguém. O Morning Star e o Evening Star sugerem levemente uma confirmação.
+
+Aí você tira o outro gap e a gente vai ter uma Doji Star Reversal com uma Southern Evening Cross. Essas figuras exigem confirmação. E o que muitas vezes vai acontecer? Você vai sair à segura, o candle vai levantar suas orelhas, tu vai ficar esperto aí na parada e você vai ver que muitas vezes uma figura de candle, pra que ela tenha confirmação, por exemplo, num Southern Evening Cross, são duas barras depois do topo.
+
+O que acontece? É que muitas vezes os gráficos ocidentais acabam invertendo e confirmando o que o candle acabou de mostrar. Então você confirma muitas vezes o candle através dos gráficos ocidentais. E aí você vai operar pelo menos uma barra seguinte do topo. Tá legal? Vamos lá.
+[0:48:13] Speaker 2: Beleza. Vamos lá. "Boa noite, quando será disponibilizado o robô de agulhadas?"
+[0:48:18] Speaker 1: Daqui a um tempo, cara.
+[0:48:20] Speaker 2: É dois meses, dois meses e meio aí do curso.
+[0:48:23] Speaker 1: Sabe por que, cara? Deixa eu falar. Tem muito nego aí, que eu queria dar-lhe umas porradas, não está fazendo o curso, a gente está vendo. Faz uma, duas aulas, três aulas, foi até o meio e parou, fez uma vez. Sabe, cara? Não é isso Não é isso que a gente quer de vocês. A gente quer que vocês façam isso, para que vocês aprendam. Porque o robô de agulhada é legal e vai facilitar tua vida. Porque esse trabalho que a gente teve aqui de olhar esses negócios todos aqui, os papeizinhos.
+
+Eu sei que ali a gente viu figura de impulso, que é mais legal, viu ponto falso, mas simplesmente se for só pra procurar agulhada, o robô facilita tua vida um milhão. Agora, é importante que se saiba operar essa merda, porque eu posso te dar uma máquina fodida na tua mão. Se tu não souber operar, vai cortar o dedo. Você entendeu? E é isso que eu não quero. Então eu estou dando um tempo pra que eu possa dizer assim: esses desgraçados já fizeram a porra do curso, então agora eles vão entender o que eles têm que fazer com isso.
+
+Você entendeu? Então aguenta aí que na hora que chegar a hora a gente vai noticiar vocês.
+[0:49:35] Speaker 2: Beleza, vamos lá. Alan: "Em algumas entradas fico esperando o Bollinger abrir e quando abre o gráfico reverte".
+[0:49:43] Speaker 1: Escuta, que tempo gráfico que isso está acontecendo? Você está vendo uma boa abertura? Você tem certeza que na hora que o Bollinger abre, você ainda tem as indicações anteriores? Eu precisava de ver onde é que está acontecendo com você, Alan, porque não é pra estar acontecendo assim. Raríssimos casos. Eu acabei de me meter no Bitcoin com tudo certo, com agulhada, com tendência, com Bollinger legalzinho.
+
+Só o semanal que eu vacilei. Vamos lá.
+[0:50:24] Speaker 2: Vamos lá. No TradingView tem o rastreador de fundamentos, tem como configurar ele pra tentar identificar possíveis agulhadas?
+[0:50:34] Speaker 1: Eu acho que tem, Eduardo.
+[0:50:38] Speaker 2: Vamos lá, Pedro Paulo: "O curso é show".
+[0:50:40] Speaker 1: Obrigado, Pedro Paulo.
+[0:50:44] Speaker 2: Vamos lá. Está agradecendo a Cássia da Act, "me passou direitinho tudo que precisava".
+[0:50:50] Speaker 1: Olha, que legal. Não conheço essa Cássia. Eu conheço o garoto que daqui a pouco nós vamos apresentar ele pra vocês. Pra quê? Pra que vocês entrem pro cara, perguntem pro cara. Não aqui hoje. Só estou apresentando pra vocês saberem quem é, pra vocês saberem que essa pessoa é o cara que está indicado, que vai falar com vocês em português. Pode sim, Esotérico, certeza, maravilhoso. Só toma cuidado com o café.
+
+Agora, soja, açúcar é fabuloso, a maior molezinha. Você está entendendo?
+[0:51:26] Speaker 2: Vamos lá, Alan: "Quando o ADX está acima do 32 ainda vale a entrada quando muda a direção do gráfico?"
+[0:51:33] Speaker 1: Olha só, Alan, você tem que entrar no trade na hora que você tem as três condições. Não fica querendo miguelar na coisa, é as três condições. O ADX já está acima de 32, ele já acelerou o movimento um bocado, o movimento já aconteceu. Você quer o quê? Ele vai continuar andando, mas se ele chega a 33 e quica? A tua chance de ter êxito na hora que ele está entrando, o momento que ele está entrando, é muito maior.
+
+Então por isso que a gente opera no momento que tem as três indicações simultaneamente. Ponto final. Qualquer coisa diferente disso, você não opera, não faz. Vai procurar outro gráfico. Vamos lá.
+[0:52:20] Speaker 2: Vamos lá. Mente Calma: "Em relação à saída do trade, como saber que horas sair, apesar dos quatro sinais positivos pra sair. Se é swing trade, como saber o momento certo?"
+[0:52:31] Speaker 1: Mente Calma, olha só, pode ficar calma. Você sabe quais são os sinais pra sair. Quando aparecer os quatro sinais pra sair, você sai. Você dá a ordem inversa que você deu antes. Se você comprou, agora você vende. Se você vendeu, você compra. Não tem horas. É a hora que o gráfico inverter, na hora que o gráfico mostrar pra você que teve os sinais. Ou a qualquer momento em que havendo tendência de mandar vender ou comprar, desde que não seja um ponto falso.
+
+Ponto. Se você tem os quatro sinais pra sair, saia. A swing trade saia, a day trade saia, a position saia, tem os sinais, saia, é tudo igual.
+[0:53:19] Speaker 2: Vamos lá, Samuel: "Quem fala mal do curso só pode não ter assistido. Pega a gente pela mão, mas tem que ver várias vezes como indicado pelo Didia".
+[0:53:28] Speaker 1: É isso aí. Porra, eu fico aí me esganiçando, falando pra pessoal assistir. Sérgio, quantas pessoas têm na live?
+[0:53:38] Speaker 2: Cento e seis.
+[0:53:40] Speaker 1: Porra, dessa vez está tendo muito. Porque geralmente os caras não querem ver.
+[0:53:46] Speaker 2: Não, e às vezes, por exemplo, às vezes surge um ou outro que chega lá no grupo. Não sei se tu acompanha lá, às vezes ele fala mal que falta, porque falta uma informação, mas na verdade se ele procurar, tudo que é software gráfico, está tudo discriminado e escrito. Link de corretora, link de montar o setup, vídeo com tudo. Lógico, assim, a gente vai atender todo mundo sem nenhum problema, mas tudo isso que a gente fala está documentado.
+
+E se o cara assistir mais do que uma vez o curso, ele vai entender, porque tem muita informação, mas está tudo no curso. Não tem nada aqui que a gente venha falar que não tem lá no curso. Seja, por exemplo, o spot, stop. Tem gente que pergunta assim: "Como botar um trade?" Está dizendo lá como inserir na plataforma da XP. "Ah, a minha plataforma é BTG". É a mesma coisa, só vai mudar ali o trâmite Às vezes o cara empaca numa coisa, acha que não entende nada, mas o curso em si, a gente vende a estratégia.
+
+Que é o quê?
+[0:54:55] Speaker 1: Grafiquei da vida.
+[0:54:58] Speaker 2: Exatamente. O básico do básico, a galera precisa correr atrás e precisa, às vezes, ter um pouco de paciência. "Como é que eu faço isso aqui? Como é que eu faço aquilo lá?"
+[0:55:08] Speaker 1: Porque a gente tem o material pra auxiliar o cara.
+[0:55:12] Speaker 2: Tem.
+[0:55:12] Speaker 1: Mas o lugar competente, de fato, onde tem a melhor informação, é na porra do vendor, na porra da corretora, porque é impossível a gente poder responder tudo quanto é corretora, tudo quanto é vendor e o cacete. Impossível, a gente não sabe.
+[0:55:31] Speaker 2: Vamos lá. Vinícius: "a trend line é traçar topo com topo ou fundo com fundo, mas pode dar alguns exemplos de como você faz?"
+[0:55:42] Speaker 1: Posso.
+[0:55:43] Speaker 2: É isso aí, é topo com topo e fundo com fundo. E se for mesma inclinação, a gente vai ter um canal. Seja de alta ou de baixa.
+[0:55:53] Speaker 1: É isso aí. Isso que eu vou tentar achar aqui pro nosso amigo. Se eu fosse traçar um canal aqui na hora que esse negócio aqui estava. Eu acho que nós tivemos um canal aqui. Tivemos. Repara que canalzinho legalzinho. Que o mercado andou aqui dentro um tempo. Bem legal. Como é que a gente traça? A gente vai olhalmente, a gente vê onde é que tem topos e fundos, que se a gente jogasse eles numa linha, eles ficariam mais ou menos alinhados.
+
+Tá legal? Então, é exatamente isso que eu acabei de fazer aqui. Quando a gente tem trend lines que ficam paralelos, a gente tem um canal. Agora, trend line, qualquer topo com topo, fundo com fundo, é um trend line. Se eu pegar e traçar isso aqui, pessoal. Se eu traçar esse topo aqui, com esse outro topo aqui, você vê que aqui teve um momento em que ele segurou e ele foi o número de força. Está vendo ali?
+
+Essa linha. Toda vez que eu traçar um trend line e que o mercado tiver que pular por ele, sempre tem uma engriesazinha. São lugares potenciais pra reverter o quê? Os números de força. E o trend line é um número de força. Vamos lá, Sérgio.
+[0:57:50] Speaker 2: Vamos. Daiana: "gostaria de saber por que sou stopada logo de cara".
+[0:57:56] Speaker 1: Porque você deve estar colocando stop no lugar errado. Deve estar colocando o stop de tamanho errado. É um erro muito comum, a pessoa está operando um tempo, está operando 60 minutos, mas não quero perder dinheiro, então eu boto um stop pequenininho. Esse stop, na maioria das vezes, seria pra um stop de cinco minutos, três minutos. Então você vai ser stopado o tempo todo. Então o stop é uma coisa que a gente vai colocando e vai olhando e vai aprendendo como graduar.
+
+Uma das coisas que eu gostava de fazer de stop, eu tendo traçado um canal, eu pegava todo o rabisquinho que tivesse saído pra fora do canal, eu vou lá, meço o tamanho, faço uma média e já coloco como incremento pra eu colocar no meu número de stop. Agora, se você está sendo stopada logo de cara, na maioria das suas operações, você está fazendo as coisas erradas.
+[0:58:57] Speaker 2: Ou uma outra coisa, Didi, ela pode às vezes abrir uma conta de uma corretora qualquer de Forex e coloca pouco dinheiro, aí você vai ficar com o spread maior. Então você sempre vai começar negativo, que é o teu custo da operação ali.
+[0:59:12] Speaker 1: Também pode.
+[0:59:13] Speaker 2: E se ela colocar um stop muito curto. Ela tem que pegar esse stop e colocar no número de força. Porque se você botar nos cinco minutos ali e já começar negativo, a chance de ser stopado é alta. Então tem que reaver aí, Diana. E se possível, se quiser, me manda aí no WhatsApp alguma coisa do tipo, a operação que você foi stopada, onde você colocou o stop pra gente tentar adequar. A gente sempre vai ver isso aí através do número de força.
+
+Ela acabou de responder aqui: "estou operando Forex". Deve ser isso mesmo, deve estar com o spread alto, tem que ver aí, pegar algum mais competitivo. Vamos lá, Mateus: "Didi, acha que se antecipar na agulhada é uma boa ou é melhor sempre esperar as linhas se cruzarem? Com o sinal do ADX e bollingers, claro. Esperar a agulhada acontecer pode roubar parte do lucro?"
+[1:00:15] Speaker 1: O robô que a gente tem, por exemplo, projeta a linha. Pra de repente, entre aspas, dar uma antecipada pra você. Mas você operar antecipado, eu não aconselharia. A não ser que esteja muito na cara. As duas linhas juntaram ali. E você já tem tendência, o Bollinger já está abrindo e ela juntou. Aí você já sabe o que vai acontecer. Olha o tempo de baixo, aí nesse caso eu vou olhar o tempo de baixo, pra ver se tem alguma onda que está iniciando agora que possa vir contra mim.
+
+Se não tiver, eu vou à luta
+[1:00:52] Speaker 2: Boa!
+[1:00:55] Speaker 1: Olha só, quanto a roubar uma parte do lucro que estava falando ali. Deixa eu falar uma coisa pra você: sim, mas sempre que a gente está operando o gráfico, a gente já está deixando um pedacinho do lucro na mesa. A gente não está vendendo na máxima da barra máxima, nem comprando na mínima da barra mínima. Então a gente já está deixando. O importante, pessoal, é a gente comer o miolo do pão, que é macio, gostosinho, quentinho.
+
+As cascas duras ali da ponta, deixa pros ratos se matar. Você está entendendo? Bota isso na cabeça. Vamos lá.
+[1:01:35] Speaker 2: "Didi, acho que o ideal é termos sempre um olho no tempo gráfico maior, acima de 60 minutos, porque às vezes em tempos gráficos de cinco minutos, por exemplo, dá agulhada, mas anda contra. Como evitar isso?"
+[1:01:47] Speaker 1: Olha, como evitar isso, deixa eu te falar uma coisa, ô Lucas Braz. Você evita isso fazendo o seguinte, bicho: ficando nos 60 minutos. O tempo vai te levar pro intraday, pros cinco minutos, pro um. Você entendeu? Fica nos 60. Se nos 60 minutos o negócio está funcionando pra você, pra que você quer ir pros cinco? Você está entendendo? Isso aí não é mulher, que a gente quer pegar todas. Você entendeu, velho?
+
+Então, fica nos 60 minutos. Quando tu ganhar experiência, que você está aí há pouco tempo, você está num CST recente. Quando você tiver uma experiência legal, você vai ver que vai acontecer de você começar a operar menor, fazer um day trade de vez em quando, tal, etc e tal. Você vai ver que vai acontecer. O meu sonho de consumo é operar no semanal, pra só ter que olhar gráfico uma vez na semana. Cada um faz o que quer.
+
+Vamos lá.
+[1:02:52] Speaker 2: Vamos lá. Lissandro: "Minha dúvida é relativa a como conectar as informações do DMI e do Didi. Quando o ADX cresce 45 e a compra é caente 30, tenho segurança pra entrar? E nesta situação acima, como relacionar o Didi?"
+[1:03:12] Speaker 1: Você entendeu isso aí, Sérgio?
+[1:03:14] Speaker 2: Ele deve estar botando o DI+, que não se usa, como o número 30. Não tem nada a ver, Lissandro. Ele só vai ver o ADX.
+[1:03:27] Speaker 1: Se você tiver uma rasgadinha pra baixo e pra cima também no DI-. O importante é você olhar o ADX. Eu nunca fiz nenhum comentário a respeito de você relacionar um com o outro, feito o que você está fazendo. Tá, Lissandro? Olha só, não começa a querer achar pelo em ovo. Outra coisa, pessoal. Quando eu digo pra você: o carro não é preto, não quer dizer então que ele é branco. Você entendeu? Não quer dizer que ele é branco.
+
+O cara não é forte. Não quer dizer que ele é fraco também. Eu não falei isso. Então não deduzam o inverso também.
+[1:04:19] Speaker 2: É só usar o ADX mesmo, Lissandro.
+[1:04:21] Speaker 1: Preocupa só com o sentido e com os valores do ADX. Os outros é só pra ver posicionamento entre eles, entre os três. Só pra isso.
+[1:04:35] Speaker 2: Vamos lá, Alex Assis: "Didi, fale mais sobre essa questão da integração entre os tempos gráficos pai e filhos, especialmente quando temos uma agulhada no pai e uma orientação no filho. Devemos considerar essa questão?"
+[1:04:48] Speaker 1: Cara, o que você está me perguntando é o que está na apostila. O tempo pai, dá uma agulhada no pai. E o filho está com outra orientação, está de venda. O que a gente ensina lá? Que o tempo pai só é afetado pelo tempo filho quando ele está fraco. Olha lá a aula. Tá legal? Então só quando o pai está fraco que o filho vai perturbar ele. O cara está cansado, o filho consegue derrubar ele, caso contrário, não.
+
+Ok? Vamos lá, Sérgio.
+[1:05:30] Speaker 2: Vamos lá: "Didi, qual é o tempo gráfico que o senhor usa para operar?"
+[1:05:34] Speaker 1: Senhor é a vovozinha e mestre é teu tio, teu avô, sei lá, foda-se. Olha só, eu opero pra qualquer coisa. Sabe por quê? Porque nego passa o dia inteiro me enchendo o saco. Eu saio de perto dessa porra aqui, porque senão nego não me larga. Entendeu? A gente não faz mais consultoria com os bancos, mas eles querem: "E aí, tudo bem?" Sabe? Bom. Então, bicho, eu uso qualquer um, porque esse tempo todo eu tinha clientes de vários perfis.
+
+Então eu tinha que olhar todos os perfis. Aí você vê uma agulhada nos cinco minutos, tu não vai entrar? Tu vê uma agulhada na venda no diário, tu não vai vender? Entendeu? Você viu, aí fodeu. Aí tu quer fazer. Mas qualquer tempo gráfico. Agora, o que eu gosto é um diário. Sessenta minutos pra cima. Não é o que eu gosto, porque eu não quero mais o nervoso do day trade. Eu fiz isso aí muitos anos, isso aí desgasta a alma da gente.
+
+Consome a gente. Não quero. Eu quero uma coisa mais inteligente. Que eu gaste menos tempo e possa de repente até ganhar a mesma coisa ou mais. Então o seguinte, meu irmão, eu digo a você: 60, 120
+[1:07:02] Speaker 2: 240, diário e vai nessa linha que tu vai se dar bem. Vamos lá! "Eu não consegui ainda configurar Alex na Tradeview, me parece que Meta Trader 5". Cícero, deve ser o setup pra montar. Me chama amanhã que a gente tem que fazer logo isso aí. Não só você, qualquer um que não tiver o setup já está atrasado.
+[1:07:33] Speaker 1: Já está atrasado.
+[1:07:34] Speaker 2: Te chamo amanhã pra gente concluir isso daí. Silvio: "Você tem alguma dica de horário noturno pela sua experiência no mercado?"
+[1:07:46] Speaker 1: Silvio, depende. Tem coisas que você está operando que não tem no mercado noturno. Se você está falando de Forex, vamos dizer, quando o pessoal está acordando lá, a chinesada, a japonesada está acordando, obviamente que as moedas dele com o dólar pegam fogo e todo o resto também. Aí daqui a pouco os caras já têm uma coisa que fazer, já arrumaram o que fazer, já têm obrigação, etc. E aí começa a michar um pouco, logo depois vem a Europa.
+
+Logo depois vem a Europa, depois da Europa começa a vir a gente aqui do lado de cá, os americanos, mexicanos operando. Agora, por exemplo, eu estou no Brasil agora, se você for ver, por exemplo, HK50, que é um tesão. Dá umas 10h, 10h30 começa a ficar bem legal. Então dependendo do que você está operando, tem realmente um horário mais propício.
+[1:08:45] Speaker 2: Beleza. Vinícius: "Devo traçar trend line somente no tempo que estou usando pra operar ou posso traçar o do tempo pai também? Pois são números de força".
+[1:09:01] Speaker 1: Próxima, Sérgio.
+[1:09:03] Speaker 2: Pedro Paulo: "Como operar em swing trade, começar na segunda e sair na sexta?"
+[1:09:09] Speaker 1: Pedro Paulo, deixa eu te falar uma coisa, a coisa não é assim. Pode ser que você entre na segunda, saia na quinta, pode ser que você entre na segunda e vai sair na outra quinta. Então não é assim. A coisa não é assim. A gente tem que entrar na operação na hora que ela começa e sair na hora que ela sai. Não é porque tem um dia marcado pra sair. Vamos lá, Sérgio.
+[1:09:35] Speaker 2: Vamos lá. Pedro: "Banda de Bollinger abre pra venda também?"
+[1:09:39] Speaker 1: Claro. Quando elas abrem pra compra, elas estão assim, fechadas, aí de repente elas abrem, uma sobe e a outra vai vindo atrás. Quando é pra venda, não. Elas abrem, a de baixo começa a cair e a de cima vem mergulhando junto. Deixa eu mostrar aqui, Sérgio. Essa pergunta eu não gostei de escutar a essa altura do campeonato. Olha aqui. A banda de Bollinger abriu para uma venda. Olha que o amarelo estava por cima.
+
+A tendência começou a subir, a gente já tinha tendência, aí caiu de novo a tendência, aí de repente a tendência voltou a subir, a banda de Bollinger começou a abrir. Pra quê? Pra essa venda aqui. Então, sim, senhor. Vamos lá, Sérgio.
+[1:10:32] Speaker 2: Rogério: "Às vezes o gráfico não está com as linhas tão em pé ou tão claro. Tem alguma dica pra perceber melhor?"
+[1:10:43] Speaker 1: Tem, Rogério, é você procurar em outros ativos. O nosso trabalho não é muito digno não. É trabalho de nego burrinho mesmo. A gente tem é que procurar a oportunidade. Não tem as linhas bonitas, não está isso, não está aquilo. Procura, é igual você vai num baile, né, Rogério? Rogério está na maior estica, de terno e gravata, você chega lá no baile, você vai pegar a primeira baranga que aparece? Tu vai ficar escolhendo ali a bonitona.
+
+Então você foi ali, a coisa não está legal, não está bonito, não está bacana, joga pra trás, feito ter uma porção de papéis ali que eu falei: "Não tem nada", passei pra trás e pega só o que está bonito, o que está gostoso. Tem que perceber melhor. A tua percepção, se você fez o curso, já está pronta. Você só vai ter que procurar mais pra conseguir encontrar. Agora tem dia, bicho, que eu vou falar uma coisa pra você.
+
+Parece coisa do Satanás, porque tu passa o dia inteiro, cara. O dia inteiro, não acontece porra nenhuma, tu não acha nada que sirva. Só aparece nos papéis que tu não gosta, que tu tem bronca, você entendeu? Aí tu levanta pra ir no banheiro, acontece tudo na mesma hora. E tu estavas no banheiro. Mas tudo bem, vamos nessa. Vamos lá, Sérgio.
+[1:12:03] Speaker 2: Vamos lá. Klaila: "Como calibrar os índices?" Ele já vem calibrado.
+[1:12:12] Speaker 1: É, o pessoal só precisa tomar cuidado porque tem um esquema que está sendo passado aí errado, sem querer, e que o estocástico fica 14, etc. Então precisa corrigir isso aí.
+[1:12:26] Speaker 2: Eu já mudei lá outro dia.
+[1:12:28] Speaker 1: Já mudou?
+[1:12:28] Speaker 2: Botei outro ali.
+[1:12:29] Speaker 1: Mas já está calibrado, Klaila. Mas se você precisar dos índices de calibragem, eu falo pra você agora. O Didi eu uso três, vou contar até 15 pra você pegar uma caneta, vai. Um, dois, três, quatro, cinco, seis, sete, oito, corre, nove, 10, 11, 12, 13, 14, 15. Olha só, Klaila. Didi eu uso três, oito e 20. Estocástico eu uso o estocástico lento, eu uso lá oito, três, três Trix, eu uso nove com quatro.
+
+Bollinger, eu uso oito com desvio padrão de dois, mais dois, menos dois. DMI, eu uso suavizados por médias Wilder, eu uso oito com oito. E Trix nove com quatro, já falei, acabou. Bollinger oito mais dois, menos dois e o Candle. Só isso, Claila. Difícil falar o nome dela. Chega a pegar na língua, Claila. Vamos lá. Próxima, Sérgio.
+[1:13:50] Speaker 2: Vamos lá. Esotéric: "Comprei o livro indicado do Candle Stick. Posso operar agulhada sem ter ainda esse conhecimento para continuidade e reversão?"
+[1:14:01] Speaker 1: Olha só, Esotéric, primeiro lugar, se você está achando que isso é um problema, não é. Às vezes eu quero matar esses caras. Se você fizer o que eu falo no curso, para você pegar o papel, desenhar e colocar pela tua casa, em uma semana você está pronto. Faz isso. Uma semana você está pronto. Legal? Agora, o que eu quero? Porque o que eu mostro ali nesse curso, eu não coloco as figuras de continuidade, embora elas existam.
+
+Agora, figura de continuidade, o que vai ser legal? Você aliar figura de continuidade e ponto falso. Aí, meu irmão, aí é matador. Você entendeu? Agora, pode operar agulhada com os indicadores sem saber candle ainda, mas na hora que você souber candle, você vai ver que você vai ter muito mais conforto no trade. Vamos lá, Sérgio, tem mais?
+[1:15:08] Speaker 2: Vamos lá. Maiel: "Faz uma operação no mercado agora."
+[1:15:16] Speaker 1: Faz uma coisa, me dá um ativo aí que está acontecendo. Como é que eu vou saber o que está acontecendo? Vou ficar parado aqui olhando? Você entendeu, Maiel? Todo mundo tem uma querência. Eu vou ficar parado olhando. E essa porra toda que eu tenho que responder, eu vou até três horas da manhã.
+[1:15:36] Speaker 2: O Bitcoin nos cinco minutos está armando um gabuzinho aí para o backzinho.
+[1:15:40] Speaker 1: Não, a gente já viu ali no GBP. GBP eu estou seguindo diário, é aquilo ali. Só o que faltou ali é entrar e colocar a ordem na tua plataforma. Eu não sei qual é a tua.
+[1:15:55] Speaker 2: Vamos lá. Antônio Carlos: "Uma dúvida, caso os gráficos diário e semanal estejam indicando compra, mas a gente observa que o preço já está bem alto, como no caso do ouro dólar, mesmo assim deve entrar na operação?"
+[1:16:08] Speaker 1: Antônio Carlos, você deve entrar na operação quando você tiver o primeiro momento em que você tem simultaneamente os três sinais. Ponto.
+[1:16:22] Speaker 2: E esse exemplo aí, Didi, do ouro, pode até botar aí, mesmo ele esticado, deu uma agulhada e o negócio continua rasgando para cima.
+[1:16:31] Speaker 1: Continua. Se os indicadores estão indicando compra, quer dizer que vai subir, ponto. Você entendeu? Agora, quando é que você deve entrar na operação, Antônio Carlos? Na hora, primeiro momento onde você tem os três sinais. "Mas eu não entrei". Está bom, então agora espera. Porque às vezes a gente quer subir no bonde andando e se fode. E bolsa é igual a forró, tem todo dia. Então não há por que de você ficar se matando, se esgoelando, se jogando em um risco desnecessário, porque você perdeu alguma coisa.
+
+Perdeu uma entrada. Vamos lá, Sérgio.
+[1:17:14] Speaker 2: Vamos lá. Hugo: "O ponto falso funciona como um substituto da agulhada?"
+[1:17:18] Speaker 1: Nada a ver uma coisa com a outra. Não. O ponto falso, só falo assim para você: continua, isoladamente. Boa, vamos lá, Sérgio. Próxima.
+[1:17:34] Speaker 2: Vamos lá, essa aqui já foi. Pedro Paulo: "Como faço para operar em uma hora e no diário?" Só botar o gráfico no tempo.
+[1:17:46] Speaker 1: De uma hora ou botar o gráfico de diário, quando você achar uma boa oportunidade em um deles, você opera. Aquela oportunidadezinha da libra aí é no diário, por exemplo.
+[1:18:04] Speaker 2: Vamos lá. Rodrigo: "Não consegui comprar ações e ficar cuidando, não entendi como fazer isso. Máximo trader swing."
+[1:18:18] Speaker 1: Está um pouco difícil de não conseguir comprar ações e ficar cuidando.
+[1:18:26] Speaker 2: Deve ser para ele montar uma carteira para ele ficar.
+[1:18:33] Speaker 1: "Não entendi como fazer isso". Foi o que eu mostrei ali hoje. Montar a carteira, se em vez de olhar 10 ativos ali que eu olhei, se eu olhasse 100, eu não teria achado só o dólar-libra, como uma potencial possibilidade de dinheiro. Eu teria achado mais coisas. E aí eu teria montado uma carteira. E aí eu vou olhando todo dia esse negócio, se é no diário, todo dia eu vou olhar, para ver se eu continuo no trade ou não, cumprindo as regrinhas que tem ali de entrar e de sair do trade.
+
+E vá para o swing trade mesmo, Rodrigo. É isso aí.
+[1:19:14] Speaker 2: Vamos lá. Gelson: "Como eu faço para colocar os ativos do lado direito?"
+[1:19:19] Speaker 1: Depende do software. Depende do vendor que você tem. Você tem que perguntar pros caras. Entendeu? O que o TradingView já vai assim pra você. Se você usar o TradingView, vai igual o meu aqui. Agora, nos outros, você vai ter que perguntar pros caras.
+[1:19:45] Speaker 2: Vamos lá. Zé Pereira: "Didi, eu quero o contato do Igor pra eu falar com ele".
+[1:19:50] Speaker 1: Ele vai aparecer aí, ele vai passar o contato pra vocês.
+[1:19:54] Speaker 2: Vamos lá. Rodrigo: "Vou assinar a corretora nova para ganhar a Black Arrow da Neológica. Equity é muito difícil, só aceita MT5. A corretora FXGlobe dá a plataforma. Qual a opinião de vocês?" Pode escolher qualquer uma, Rodrigo.
+[1:20:16] Speaker 1: Pode escolher qualquer uma. Deixa eu falar uma coisa pra você, Rodrigo. A gente só fala de Equity, acho que não é difícil, porque o garoto lá ajuda. Só aceita MT5. Tudo bem, mas ele instala pra você.
+[1:20:29] Speaker 2: E é de graça também.
+[1:20:31] Speaker 1: E de graça. Mas a gente fala de Equity, por que, bicho? Porque tive o contato do cara e eu falei: "Olha, eu preciso de alguém pra atender meus alunos em português. Vocês querem fazer isso?" É uma corretora que é provedora de liquidez, é uma provedora legal, já tem um tempo, não tem nada que se fale dos problemas mais do que bons. Então eu acho que é uma corretora legal. Agora, você pode pegar onde você quiser.
+
+Você está entendendo? O que eu quero é que tu vá lá, coloque e tire a ordem certa. Só isso. Eu não conheço a FXGlobe. Não conheço.
+[1:21:20] Speaker 2: Vamos lá. Pedro Paulo: "Como faço a operação pra durar mais do que um dia?"
+[1:21:25] Speaker 1: Se você entrar num 60 minutos, dos 60 minutos pra cima, Pedro Paulo, você já está no swing trade, você potencialmente já vai passar mais de um dia.
+[1:21:42] Speaker 2: Vamos lá. Miguel: "BK3 deu uma agulhada bonita hoje".
+[1:21:50] Speaker 1: E aí, meu amigo, ganhou um dinheiro? Vai pagar o chope? É isso que eu quero saber. Está aí a dica, pessoal. Pão de Açúcar deu uma agulhada legal. Vamos lá, Sérgio.
+[1:22:04] Speaker 2: "Como aumentar a aposta no médio da operação?"
+[1:22:08] Speaker 1: Deve ser no meio. No meio ou no médio?
+[1:22:14] Speaker 2: No meio, acho.
+[1:22:16] Speaker 1: No meio. Só você comprar mais ou vender mais, aumentar tua posição. Você comprou lá 10 lotes e você está com certeza que vai ter o preço, você quer comprar mais, compra mais 10 lá, mais 20, como você quiser.
+[1:22:37] Speaker 2: Vamos lá. Rodrigo: "Onde define o valor de compra e venda?"
+[1:22:49] Speaker 1: Acho que eu entendi, Sérgio.
+[1:22:51] Speaker 2: Ele quer saber como definir o valor de compra e venda.
+[1:22:54] Speaker 1: Uma coisa é você ter um chute de onde que isso possa ser. Certamente vai ser em cima de um número de força, em cima de um trending line, uma merda assim. Agora, o que você define não é o valor de comprar e de vender, Rodrigo. O que você define é o momento que você vai comprar ou pra vender. Se der uma compra 7,50, 7,70 ou a oito, o que está dizendo é que se você comprar isso nesse preço, vai ganhar dinheiro porque vai subir.
+
+Só isso. Você entendeu? Não dá horário, ele diz o momento, mas não tem uma hora, não tem um valor, um preço. O preço é o do momento também. Ok?
+[1:23:44] Speaker 2: É onde aconteceu a agulhada com a entrada de tendência e abertura de ordem. É naquele momento. Você vai saber o preço que você vai comprar.
+[1:23:53] Speaker 1: É.
+[1:23:55] Speaker 2: Vamos lá.
+[1:23:55] Speaker 1: Porque você olhou os gráficos e viu aquilo ali na tua frente. Acabou de fechar, está fechando uma barrinha e vai estar plotando uma agulhada ou uma compra, o que for. Que preço está saindo? "Ah, está 7,70 com 7,80". "Toma 10 quilos pra mim a 7,80". Setenta, pronto, é o preço que você entrou. Você pode chegar lá, compra 10 quilos a 7,70 e fica ali negociando, tentando levar. Você que sabe. Mas vai ser naqueles spreadzinho ali, basicamente.
+
+Agora, às vezes a gente fica com muito preciosismo, de querer blá-blá-blá e perde o bonde. Aí depois fica puto porque não entrou. Vamos lá, Sérgio.
+[1:24:40] Speaker 2: Vamos lá, Vanilson Miller: "Boa noite, Didi. A respeito dos atrasos do TradingView com a B3, como posso corrigir isso?"
+[1:24:48] Speaker 1: Olha, provavelmente você está com uma plataforma não paga e é uma plataforma mais mixuruca, como em todos os lugares. Não é o TradingView.
+[1:24:59] Speaker 2: Na verdade, Didi, o TradingView é online pra CFDs, esses pares de moeda, tudo é online. Só que pra cada tipo de mercado tem que contratar o online, senão tem um delay, sim. A B3, se eu não me engano, é um dólar Se quiser a bolsa dos Estados Unidos, tem que pagar a mais, acho que é US$ 6. Depende de qual tipo de mercado é.
+[1:25:27] Speaker 1: E o cara geralmente fica com delay de 15 minutos. Agora, pra quem está operando swing trade, isso não é problema. Eu até gosto, porque aí o cara fica empurrado pro swing trade. Vamos lá, Sérgio.
+[1:25:45] Speaker 2: Vamos lá. Eu tive experiência com OB, sei operar em M5, como faria para operar em D1 ou H1?
+[1:25:54] Speaker 1: Pedro Paulo. Sérgio, manda alguém trazer um remédio aqui porque eu estou até com urticária. Nunca mais fala em OB na sua vida. Opções binárias é a maior palhaçada, roubalheira fodida, você está entendendo? Sai disso, vai pra porra do Forex. Entendeu? Sai de OB. Se você quer operar OB em vez de M5, você quer operar em D1, coloca gráfico de diário. Senão coloca gráfico de 60 minutos ou H1 e vai operar.
+
+Agora, sai dessa porra, Pedro Paulo.
+[1:26:38] Speaker 2: Vamos lá. Joaquim: "Quando a média longa cruza primeiro a média, média pra baixo, e em seguida a média curta cruza pra cima, é considerada agulhada? Visto que a média curta é o alerta e a longa é a confirmação".
+[1:26:54] Speaker 1: Joaquim, o que vai configurar a agulhada é se isso aconteceu simultaneamente ou muito próximo. É isso que vai estar configurando uma agulhada ou não. Uma agulhada perfeita ou uma agulhada queijo minas. Vamos lá.
+[1:27:13] Speaker 2: Vamos lá, Rodrigo: "Ficar comprando e vendendo ouro direto que acho que dá dinheiro imediato. Qual sua opinião? Às vezes ganha um 'doleta' ou até menos, mas dá uns 50 paus o dia todo".
+[1:27:26] Speaker 1: Rodrigo, depende do que você faz. Eu acho que não é pra ficar comprando e vendendo o dia todo, não. Sabe por quê? Vaso que todo dia vai à fonte, um dia acaba quebrando. Macaco que pula de galho em galho, acaba levando chumbo. Então são ditados pra você considerar e tomar sua decisão.
+[1:27:51] Speaker 2: Vamos lá. "Robô de agulhada é semelhante ao rastreador de fundamentos do TradingView?"
+[1:28:01] Speaker 1: Não. Rastreador de fundamento, eu nem sei o que é fundamento. Eu vou comprar um cachorro, vou botar o nome de Fundamento. O cara fala: "Você já viu o Fundamento?" "Já vi o Fundamento hoje?" Já. Já vi o Fundamento. Já dei comida, água e o caralho. Fundamento. Eu não posso nem falar o que eu ia falar aqui porque deve ter menino aí.
+[1:28:25] Speaker 2: Não, mas o robô de agulhadas é nosso, entendeu? A gente vai ficar pesquisando as agulhadas. Esse do TradingView é diferente.
+[1:28:34] Speaker 1: É outra coisa.
+[1:28:41] Speaker 2: Vamos lá. José Geraldo: "A equipe do grupo é show, hoje me ajudou muito". Legal.
+[1:28:49] Speaker 1: Obrigado, José Geraldo. Obrigado, meu irmão. Mas deixa eu falar uma coisinha pra você. Eles têm mais é que ajudar mesmo, porque a gente paga caro pra cacete pra eles fazerem isso. Então tem mais é que ajudar mesmo. Mas obrigado pelo feedback.
+[1:29:05] Speaker 2: Antônio: "O chat limita a quantidade de caracteres da pergunta. Vou pedir que concatenem a minha pergunta para que todos entendam".
+[1:29:19] Speaker 1: Ele deve colocar duas perguntas aí.
+[1:29:23] Speaker 2: Vamos lá. "Boa noite, tenho várias dúvidas. A primeira é se estou analisando o gráfico com o tempo de uma hora e o preço do ativo está R$ 10 naquele momento. Se eu vejo os três sinais, agulhada, tendência existente e bollinger abrindo, em qual momento exato eu entro no trade?"
+[1:29:41] Speaker 1: Na hora que você acabou de ver isso. Próxima.
+[1:29:49] Speaker 2: Clenildo diz: "Já fiz todas as aulas e instalei o TradingView hoje, assim ficou bem mais fácil de entender os indicadores". É isso aí, agora tem que rever de novo.
+[1:29:58] Speaker 1: Clenildo. Olha só, pessoal todo. Olha só, pessoal. Tem alguma coisa que eu queria falar pra vocês. Por que eu diria pra vocês: "Olha, opera swing trade e não opera day trade"? Onde é que você acha que eu tenho alguma vantagem se você fizer o que eu estou falando ou não? Nenhuma. Então por que eu estaria falando isso? Pra proteger vocês. "Mas dá pra acreditar nesse cara?" Tenho 45 anos nessa porra, se você não quiser acreditar, tudo bem, pega um de três anos e acredita nele.
+
+Ou o que tem 15 anos, diz que tem 30, o outro diz que ganha 1 milhão por dia, o outro diz que está não sei quantos anos sem perder um trade. Tem esses caras tudo aí, você entendeu? Você se abraça com um deles. Eu estou falando pra você, bicho, pra proteger vocês, você entendeu? Vocês precisam ter esse negócio instalado. E Clenildo e os amigos, assistam várias vezes e vá pro gráfico e vá pro trade pequenininho, mas vai, assiste de novo.
+
+O que eu digo é o seguinte: vocês vão perceber algumas coisas, que depois que você fez o curso, na hora que você foi pro mercado, você ganhou uma experiência Com essa experiência nova que você tem agora, você consegue entender algumas coisas que tinham ali no curso, que aparentemente passavam meio batido ou que você achava que era uma brincadeira minha e não era. Porque tudo que eu coloco ali, mesmo as palhaçadas, vocês podem pensar que não sei o quê, é pra fazer, é um ensinamento.
+
+Não é nenhuma brincadeira. Eu não perdi o meu tempo ali com nada, com gafurieta. Tudo que eu estiver falando é um ensinamento. Às vezes você não percebe, mas se você fizer o curso algumas vezes e participar do mercado, você vai ganhar experiência e vai perceber que aquilo ali é um ensinamento. Então, meu irmão, enquanto tiver essa porra desse curso aí, façam essa desgraça. Ok? Vamos lá. Obrigado, Penildo, pela informação.
+[1:32:14] Speaker 2: Pedro Paulo: "Sair seria fechar a operação ou diminuir o stop win?"
+[1:32:19] Speaker 1: Sair seria sair da operação, zerar a operação, fechar a operação.
+[1:32:28] Speaker 2: Vamos lá. Antônio Marcos: "Entro antes da barra finalizar, por exemplo, 58 minutos, ou posso entrar depois que a nova barra abrir?"
+[1:32:38] Speaker 1: Olha, nós devemos estar falando uma barra de diário. De hora, uma barra de hora, qualquer coisa assim. Se ele está falando 58 minutos é uma barra de hora. Então você pode entrar nos 58 minutos, ótimo! Agora, você não precisa entrar os dois minutos após o início. A partir de 58 minutos, meu amigo, a hora que você puder, você joga. Não tem que esperar mais coisa nenhuma. A não ser que esteja muito apertado pra ir no banheiro.
+
+Aí eu aconselho ir no banheiro antes. Vamos lá. Continua, Sérgio.
+[1:33:16] Speaker 2: Vamos lá. Paulo Rafael: "O operacional é simples, não tem que inventar, não pode querer ver o que o gráfico não está vendo. Eu já insisti e deu ruim. A operação é simples, mas exige atenção de nossa parte".
+[1:33:30] Speaker 1: Paulo Rafael, ótimo você falar isso, porque eu tenho um recado pra galera. A gente tem que operar o que o gráfico está mostrando pra gente. Eu conheço muita gente que quer ganhar dinheiro e começa a ver bicho. "Ah, o Bollinger não está bem assim", mas pra ele está, porque ele está querendo entrar. A agulhada ainda não deu, ele não sabe o que, mas ele acha, ele quer se jogar, e aí se dana. Você entendeu?
+
+A operação realmente é simples, o negócio é não se adiantar, não inventar, não ter nenhum preconceito, não esperar porra nenhuma. Você está entendendo? Você tem ou não tem aquilo na tua frente. Entendeu? E ponto final. Vamos lá. Obrigado, Paulo Rafael.
+[1:34:19] Speaker 2: Vamos lá, Joaquim: "Por exemplo, analisando em H1 deu agulhada, tendência acelerante no DMI, o Bollinger demora mais ou menos três candles, três horas pra abrir. Nesse caso, perdeu?"
+[1:34:29] Speaker 1: Não. Como é que a gente entra na operação, Joaquim? No primeiro momento em que eu tenho os três sinais, ponto final. Ponto final, só isso. É simples. Você vê, o pessoal já começa: "Quantas barras eu posso esperar pra entrar?" Já está complicando. É só aquilo ali, só aquilo que eu falei. Os três sinais. O primeiro momento que você tem os três sinais é antes de você entrar. "Ah, mas os três sinais entraram 12h30, já são 12h40, eu posso entrar ainda?" Você pode fazer o que você quiser.
+
+A hora correta de entrar que eu diria pra você era 12h30. Ponto. Vamos lá, pessoal.
+[1:35:15] Speaker 2: Vamos lá. Miguel: "Assisti o curso duas vezes e passo o dia vendo gráfico pra entender bem a teoria. Minha dúvida é em que papel começar sem se expor muito".
+[1:35:25] Speaker 1: Olha só, tá legal. Se você está na bolsa aí, eu diria pra você botar na tua tela, até pra você exercitar, aí é 70, 80 papeizinhos do índice. E começa por esses aí, Miguel. Taca pau. Vamos lá, Sérgio.
+[1:35:44] Speaker 2: Vamos lá. Cícero: "Eu tentei instalar o sistema gráfico no Didi na Excel, mas tive dificuldades, ainda não peguei o sistema do Didi". Vamos instalar isso aí amanhã, Cícero.
+[1:35:58] Speaker 1: Não, vai falar hoje aqui com ele, já na cara dele, Cícero. Amanhã você já vai procurar ele. Ele vai arrumar tudo pra você.
+[1:36:09] Speaker 2: Beleza, vamos lá. Didi: "JPY está dando sinal de entrada, venda santa, ainda mais o candle vence só daqui 21 horas. Você entraria agora ou espera estar acabando o candle?"
+[1:36:20] Speaker 1: Eu espero o candle estar acabando. Sabe por quê? Isso é uma barra simulada, em função do preço que está saindo. Se chegar daqui a uma hora, está dando uma venda, o negócio estiver dando uma porrada pra cima, você está entendendo? Você está perdido, porque você já vendeu. Então é no finalzinho. Vamos lá.
+[1:36:45] Speaker 2: Vamos lá. Alan: "Obrigado pelo curso, estou seguindo no gráfico e entrei numa agulhada na Blau três. Inverter os sinais e sair do trade. Perdi 3% do valor aplicado no trade, aguardando nova oportunidade".
+[1:37:00] Speaker 1: Alan.
+[1:37:02] Speaker 2: Eu vou rever essa Blau aqui, fiquei curioso.
+[1:37:06] Speaker 1: Eu também fiquei curioso, porque é o tipo do negócio que não é. Você entendeu? Então, Alan, procura o Sérgio amanhã. Sérgio, e depois tu me fala, por favor. Eu quero saber o que foi que esse cara fez. Alan, eu queria que você procurasse o Sérgio amanhã E mostrasse pra ele a operação que você fez, o que foi. Aliás, eu não vou aguentar, vou ver essa blouse já.
+[1:37:33] Speaker 2: Até fez um efeito agulhada, Didi, e depois ela montou o topo ali e mixou. Mas assim, até o momento não dava pra estar perdendo dinheiro, não. Desde o preço de entrada que deu. Que ela está exatamente no mesmo divisor.
+[1:38:00] Speaker 1: Vamos lá ver. Eu não aguento. Tudo aqui. Mandou você estar entrando nesta barra? Nessa barra. Preço fechamento dessa barra: 12,57. Essa amarela aqui. 12,57, está legal. Está ganhando algum. Já esteve ganhando mais, mas está ganhando algum ainda, porque aqui, vou abrir isso aqui pra todo mundo ver. Alguma coisinha que você fez errado aí, amigo, viu só? Olha lá. Olha aqui pro lado direito, agulhada de compra.
+
+Repara aqui em cima, já temos tendência. Já temos Bollinger abrindo? Temos. Então essa barra aqui amarela. Preço fechamento dessa barra, se você operou ali pelo fechamento, como eu falo: 12,55, 12,56. O negócio veio de mínima, nem tocou no teu preço, então você não pode ter stopado. Você não deveria ter stopado. Por quê? Porque o teu stop vai ser sempre diferente da tua entrada. Onde é que você ia botar o stop disso?
+
+Aí eu colocaria aqui, a 12,26, que absolutamente chegou. Nem no teu preço de entrada chegou. Então você não teria se stopado de jeito nenhum.
+[1:39:19] Speaker 2: Então tem que ver essa entrada aí. Ele entrou errado.
+[1:39:25] Speaker 1: É.
+[1:39:26] Speaker 2: Entrou com o bonde andando.
+[1:39:28] Speaker 1: A entrada é essa daqui. Essa amarela. Não, é legal. Legal. Ele tomou a pancada, aprendeu. Agora não deixa ficar carregando de 3% não. Não deixa ficar carregando de 3%. Vamos lá.
+[1:39:49] Speaker 2: Vamos lá. "Antônio, eu sou um dos que reclamou do curso, pois achei muita informação jogada e sem exemplo prático. Assisti pelo menos três vezes cada aula, porém sou iniciante e esse é meu primeiro contato com trade".
+[1:40:03] Speaker 1: Legal. Olha só, Antônio Marcos. São algumas perguntas que eu faria pra você. Você assistiu lá o curso de iniciantes? Você veio aqui na aula, você fez o curso, você está falando que já fez três vezes o curso. Legal, bacana. Você pegou lá o curso que a gente tem ali pra ajudar iniciante? Segunda coisa: "Ah, Didi, eu não fiz o curso, não vi que tinha". Veja lá. Veja lá e assiste. Se você é iniciante, vai ter informação legal ali pra você.
+
+Segundo lugar, começou a pegar, bicho? Chama a gente, o suporte. Vem às aulas de tira-dúvida. Agora, a questão de exemplo prático é que as pessoas querem complicar, porque o que eu fiz aqui de olhar os papéis, se você estava no começo aí da aula, é aquilo ali que a gente faz, bicho, não é nada de diferente. Nego quer um negócio que seja: "o cara opera, olha como ele opera!" Porra nenhuma disso, meu irmão.
+
+Os caras gostam de ficar fazendo isso pra botar bronca em cima, entendeu? Esse daí, meu irmão, é o cara que não ganha porra nenhuma. Que gosta de blá-blá-blá. Esse aí não ganha porra nenhuma. Entendeu? Então o negócio é o seguinte: peça nossa ajuda, não deixe de pedir nossa ajuda, porque nós queremos te ajudar. Pode ter certeza.
+[1:41:38] Speaker 2: E assim, o negócio, Antônio, é procurar oportunidades. Você viu alguma coisa, está com dúvida pra ver se é uma oportunidade? Manda pra gente que a gente vai analisar.
+[1:41:52] Speaker 1: Bota no grupo, as pessoas vão lá e ajudam. O grupo é pra isso. O grupo é pra isso, Antônio. Agora o seguinte: não deixe de procurar a gente, porque senão eu vou mandar uns malucos ir dar uns tapas em você aí, se você ficar falando, reclamando do grupo. E não tiver procurado o nosso socorro. Se procurou o nosso socorro, a gente não atendeu ou não serviu, aí você pode malhar de novo, mas até mim você vai ter que chegar pra procurar.
+
+Procura o suporte, o suporte não deu, o Sérgio, o Sérgio não deu, tu vai falar comigo. Como eu falo pra porrada de gente. Vamos lá.
+[1:42:34] Speaker 2: Beleza, vamos lá. "Então eu posso escolher um dos tempos gráficos e operar só nele?"
+[1:42:43] Speaker 1: Pode. Jonathan, por favor, escolha o swing trade. 60, 120, 240 e diário. Vamos lá.
+[1:42:55] Speaker 2: Vamos lá. Sandro Pupo: "Didi, estou iniciando como trader, no nosso grupo tem pessoas que já operam. Tudo que tem aqui no curso é pra iniciante, com linguagem simples e didática. Pega na mão e vai."
+[1:43:08] Speaker 1: É um iniciante. Como outros que já falaram que são iniciantes. Agora é o seguinte, pessoal, deixa eu falar uma coisa. A gente pode ajudar vocês, a gente quer ajudar vocês. Agora, o que eu queria dizer é que todo mundo lá foi pro colégio tal, primário. E no primário você já começava a ver, tinha uns amiguinhos que já repetiam de ano Por que ele repetia de ano? Ou porque ele não memorizava ou porque ele não dava bola.
+
+De repente, não memorizava porque não tinha interesse. Ou porque ele não estudava ou porque ele não podia estudar, então não tinha jeito, não conseguia passar de ano. Então, pessoal, aqui é a mesma coisa. Tem gente que se não estudar não vai passar de ano. Você entendeu? Precisa assistir o curso, precisa estudar, apostila do lado, participa ali do grupo, as pessoas falam coisas, você vê se está certo, se está errado.
+
+"Ah, Didi, eu não tenho tempo pra isso". Ok, dá uma olhada no que foi papeado no grupo quando você chega em casa à noite. Abre tua máquina, faz o que eu fiz ali, bicho, é só isso. Vai um ativo por ativo da tua listinha, vê se tem alguma coisa bonita pra entrar, se tiver, anota. Achou 10 coisas bonitas. Vamos olhar essas 10, vê quais são as mais bonitas das 10. Vamos escolher três pra eu entrar. Só isso.
+
+Vamos lá.
+[1:44:46] Speaker 2: O que determina o tempo da operação não é o tempo gráfico escolhido, e sim os sinais dos indicadores.
+[1:44:54] Speaker 1: Perfeito, Jonathan.
+[1:44:57] Speaker 2: Vamos lá. Esotérico: pode analisar a agulhada em MRNA no diário? Ainda dá pra operar contigo?
+[1:45:05] Speaker 1: Esotérico, não, porque senão começa o negócio de olhar papel pra um, pra outro, aí eu já sei que fodeu. Eu quero tirar dúvida de gráfico, consultoria é outra coisa.
+[1:45:17] Speaker 2: Cícero: agora, Didi, me responda uma coisa. Se eu estiver operando no gráfico de 15 minutos, isso pode ser um swing trade?
+[1:45:24] Speaker 1: Cícero, se você entrar numa operação no 15 minutos, no segundo período de um pregão, do que for, você tem grandes chances de virar um swing trade. De manhã, você tem boas chances de sair, de fazer um day trade. Mas se for à tarde, as tuas chances de virar swing trade já aumenta muito. Rapaz, está entrando uma tempestade maravilhosa aqui. Olha o barulho.
+[1:45:59] Speaker 2: Didi, eu estava com dúvida nos candles. Aqui no tira-dúvidas entendi que cada candle depende do tempo de operação. Estava fazendo a leitura errada.
+[1:46:09] Speaker 1: Sérgio, eu vou compartilhar um minutinho. Sandro, olha só. O que você vai ler de candle é a mesma coisa. Estou olhando aqui o diário. Eu estou lendo o candle. Na hora que eu estou operando cinco minutos, os candles são diferentes. E você vai analisar esses candles aqui dos cinco minutos, se você estiver operando cinco minutos. Então você opera o candle do tempo gráfico que você está operando. É isso que você vai olhar.
+
+Vamos lá, Sérgio.
+[1:46:47] Speaker 2: O Rodrigo Machado: ninguém compra curso de natação e sai nadando como o Michael Phelps. Leva tempo.
+[1:46:54] Speaker 1: A maioria nunca vai nadar como o Michael Phelps. Pra operar como eu, tranquilo, mas nadar igual o Phelps vai ser difícil. Obrigado, Rodrigo. Vamos lá, Sérgio.
+[1:47:08] Speaker 2: Dá pra ficar puxando stop alguém?
+[1:47:12] Speaker 1: Dá. Pra mexer, você está dizendo? Dá, sim, senhor. Principalmente se você faz uma parcial. Puxando stop seria você fazer trading stop. Isso é o que é o trading stop. Está legal? E na hora que você faz uma parcial, você puxa o teu stop loss pra um outro preço também.
+[1:47:32] Speaker 2: Pedro Paulo: operar uma vez por semana quer dizer fazer só uma operação? Não, né?
+[1:47:38] Speaker 1: Olha só, Pedro Paulo, você pode abrir quando você quiser e fechar quando você quiser. Muitas vezes eu entrei numa operação, e no meio da operação eu saí, por quê? Porque eu ia viajar, porque eu estava indo pra praia, não queria ficar me apurrinhando, etc. Então você entra e sai na hora que você quiser. Está legal? Agora o seguinte, operar uma vez por semana, não quer dizer que você esteja operando semanal, você pode fazer um day trade por semana.
+
+O que eu falei, meu desejo é de operar no semanal, que aí pra operar no semanal só tem que ver gráfico, você está entendendo? Sexta-feira à tarde, pra ver o que está acontecendo com as minhas posições e se tem alguma coisa interessante. E acabou. Está legal? Não é que eu vou fazer só uma operação. Eu posso fazer 10 operações de semanal. Ou seja, eu estou olhando um gráfico que as barras estão sendo formadas por cada semana.
+
+Cada barra daquela é o resumo de uma semana. Quando eu estou olhando esse gráfico, eu digo: "estou operando semanal". Mas não quer dizer que eu vá ficar uma semana, porque uma operação semanal, vou falar uma coisa pra você, ela leva dois meses, três meses, quatro meses. Eu já vi agulhada de mensal durar três anos e meio. E de queda, graças a Deus. Vamos lá, Sérgio.
+[1:49:05] Speaker 2: Vamos lá. Marga: minha dúvida é sempre que houver agulhada deve ter uma figura de mercado ou nem sempre?
+[1:49:13] Speaker 1: Não. Se tiver, é um presente. Às vezes você tem uma agulhada e está perdendo um neckline, aí é lindo, aí fica muito mais fácil. Vamos lá.
+[1:49:30] Speaker 2: Didi, acha que devemos dividir a banca entre ativos ou colocar tudo em um ativo só?
+[1:49:36] Speaker 1: Dividir
+[1:49:41] Speaker 2: Vamos lá.
+[1:49:42] Speaker 1: Se você errar um, você acerta outro.
+[1:49:47] Speaker 2: Na primeira aula tira dúvida, eu fui mencionado para não utilizar mais o número 32 no ADX quando a tendência está cainte.
+[1:49:53] Speaker 1: Entendeu errado. Quando a tendência está cainte eu considero 32. Quando a tendência está subinte eu não considero. Genial History, você pegou exatamente ao contrário. Então conserta logo.
+[1:50:10] Speaker 2: Vamos lá. A aula vai ficar gravada? Vai.
+[1:50:18] Speaker 1: Vai.
+[1:50:21] Speaker 2: Vamos lá, Rodrigo Machado: "Didi tu faria uma lista de cinco melhores papéis pra ganhar dinheiro a longo prazo, pelo menos no início. Pensa com carinho".
+[1:50:30] Speaker 1: O cara adora uma moleza. Olha, deixa eu falar uma coisa pra você. Eu não tenho paixão por papel nenhum. Eu tenho paixão pela oportunidade. Na hora que eu vejo aquela oportunidade estar dando uma ponteada boa, não precisa ser agulhada, não, às vezes está rompendo uma figura. É isso aí que eu gosto, pra mim não interessa o papel. Se ele tiver liquidez de mercado, liquidez pro meu lote, eu não tenho paixão por nada.
+
+Agora, tem alguns papéis que eu detesto. Eu detestava a Groceries, detestava Sharp, detestava a azarado travesso, aquela Azevedo Travassos, eu chamava de azarado travesso, aquilo ali era uma desgraça. OIBR. Puta que pariu. OIBR parece que tem uma caveira de burro enterrado debaixo da sala da diretoria, porque não é possível. Nossa, OIBR, aquela IRB, aqueles papéis ali do Ferri, tudo mico. Pelo amor de Deus, rapaz.
+
+Vamos lá, Sérgio.
+[1:51:55] Speaker 2: Vamos lá. "Didi, estou lendo o livro do Greg Morris e ele fala de vários padrões de reversão".
+[1:52:00] Speaker 1: Isso. Eu dou alguns que são os mais fáceis e mais acontecentes. Mas existem muito mais. E depois que você gravar os padrões de reversão, você deve estudar os padrões de continuidade. E aí você vai ver que na hora que você aliar padrão de continuidade com ponto falso, acabou pros caras.
+[1:52:24] Speaker 2: Vamos lá. Rodrigo Machado: "Didi, já perdi 350 dolentas e a revin vi as aulas".
+[1:52:29] Speaker 1: Rodrigo, eu queria ver as operações que você está fazendo pra você perder 350 dólar e para agora mesmo, entre em contato com a gente, pra gente ver o que está acontecendo. Você entendeu? Você entendeu alguma coisa errada, não é possível. Ou está medrando no trade, botando stop errado, porque não é pra estar acontecendo assim não, Rodrigo. Contata o Sérgio aí, por favor. Nosso super agente especial pra operações cabulísticas.
+[1:53:03] Speaker 2: Gabriel: "Vale entrar no padrão de reversão antes dos indicadores virarem? Ou se der dois sinais mais padrão de reversão, vale arriscar? Porque reversão no candle indica antes que no Didi, por exemplo".
+[1:53:17] Speaker 1: Olha só. De novo o nego quer se adiantar no trade. É impressionante. Nós acabamos de responder isso aí hoje ainda. Meu irmão, o candlestick vai servir pra te levantar as orelhas. E falei também que muitas vezes quando ele vai confirmar, os indicadores já confirmaram. Então bota o candle na tua frente, aprende candle, olha na hora que você vê a figura e repara o que acontece ali. Na maioria das vezes, pra você ter a confirmação do candle, os indicadores já confirmaram.
+
+E uma coisa que eu faço é confirmar o candle através dos indicadores, porque os indicadores nunca conseguem dar a trocada na primeira barra. Precisa ter acontecido alguma coisa contrária pra ele mostrar um topo ou um fundo, porque senão não teve. Ele não é adivinho. "Você pode ter saído na máxima?" Posso, de repente era o número de força, estava cumprindo o cabeçalho e eu ia sair dali mesmo. Mas o indicador não mostrou.
+
+O candle estava mostrando. É, tudo bem. Só que aí o candle pra confirmar, o indicador já confirmou antes. Vamos lá, Sérgio.
+[1:54:26] Speaker 2: Vamos lá. "Didi, na aula anterior eu perguntei ao Sérgio se o Didi Index ajuda a operar bem cripto. E ele confirmou que sim, mas vocês falam tanto de papéis e índices fortes que fico até na dúvida".
+[1:54:37] Speaker 1: Rogério, deixa eu falar uma coisa pra você. Eu estou falando isso daqui, mas ultimamente eu tenho ficado muito mais em cripto do que em bolsa. Sai dessa, não tem nada a ver isso aí, Rogério. Bom demais na cripto.
+[1:54:52] Speaker 2: Vamos lá. Completando a pergunta: "Dá pra confiar bem pra operar cripto?"
+[1:54:59] Speaker 1: Cripto. Tranquilo, Rogério. Pode sim. Deve operar. É um dos melhores, aliás, atualmente.
+[1:55:10] Speaker 2: Vamos lá. Daniel Pinto: "O método está claro, as explicações usando o trade view também, mas seria interessante passar pelos ativos que podem ser tratados. Abrir a corretora e mostrar como operar CFD no swing trade".
+[1:55:26] Speaker 1: Olha só. Operar no swing trade ou no day trade é a mesma coisa, é colocar a ordem e passar a ordem e acabou. Você vai estar no swing trade a partir do momento que você estiver operando um tempo gráfico maior. Está legal? Os ativos que devem ser tratados, se a gente falar de bolsa, eu diria pra começar pelos 80 papéis. 80, 70, 90, não sei quantos são hoje, do índice. Começa por aí. "Eu quero operar só índices".
+
+Então se você quiser, anota. DAX é muito bom, HK50 é muito bom, Triple Q, que agora é quatro, mas o QQQ que é o nasdaquinho. O SPY. São índices bons de se operar. "Eu quero operar moeda". Tudo que tem boa liquidez o dólar está junto, basicamente. O dólar está junto. Qual a mais violenta? Euro dólar. Essa é a que mais pipoca. Depois você tem outras oportunidades. Você não tem também milhões de pares de Forex.
+
+Você pegar uns 10, é mais do que suficiente. Os que mais negociam uns 10, é mais do que suficiente. Cripto, qual é a dica pra cripto, pessoal? Olha o Bitcoin como tendência macro. Em vez de olhar dois tempos acima, um tempo acima, você vai olhar o Bitcoin como tendência macro. E aí você vai achar uma moeda qualquer que seja uma mais fraquinha. O Multicoin, o Shitcoin, qualquer coisa. Eu acho que o Multicoin é bom, uma moeda mais legalzinha, porque elas andam muito mais, tanto pra cima como pra baixo.
+
+Agora usar o Bitcoin como tendência macro. A minha queridinha, só pra citar, chama-se Solana. "Gosta de Cardano?" Gosto. "Gosta de Shiba?" Gosto. Cada um vai gostar. Eu gosto de pegar as 10 mais negociadas, você está tranquilo. Vamos lá.
+[1:57:44] Speaker 2: Beleza! "Pessoal, o Didi ensina a analisar o gráfico, informações sobre os mercados que vocês querem operar, vão ter que procurar em outro lugar, entendam isso. O Google."
+[1:57:57] Speaker 1: É isso aí. É isso mesmo. A gente diz onde e até alguns a gente ajuda, mas a gente não tem todas as informações. Vamos lá. Impossível.
+[1:58:08] Speaker 2: Vamos lá. Excelente aula.
+[1:58:12] Speaker 1: Obrigado, Sérgio. Obrigado, Vitor.
+[1:58:15] Speaker 2: "Didi, dê uma explicação melhor sobre como fazer parcial, porque nunca peguei esse troço direito."
+[1:58:20] Speaker 1: Olha só, Carlile, vamos dizer, você comprou um papel a R$ 10. Eu vou até marcar aqui. Comprou o papel a R$ 10, o teu stop loss está R$ 9,50. Você analisou os gráficos, acha que esse gráfico vai pra R$ 13,80. E aí você foi lá e comprou esse negócio a 10 cruzeiros. O que foi? O papel subiu, está 11 cruzeiros. Você vai lá e vende a metade do teu lote a 11 cruzeiros. Então você ganhou de 10 pra 11 a metade, ganhou R$ 0,50.
+
+Então se você já ganhou esse R$ 0,50, você pode pegar esse R$ 0,50 e subir no seu stop loss. O seu stop loss era R$ 9,50, agora passou a ser 10. O que era 10? Seu preço de entrada, portanto você não perde mais dinheiro. É isso. Ou por acaso o mercado está, você comprou a 10, o mercado está R$ 13,20, aí você vê o mercado dá uma enrolada, você fica meio cabreiro ali, meio com medo, dane-se, você vai lá e toca a metade do teu lote, porque se o mercado dali cagar, você já realizou um pedaço do teu lucro, você rapidamente zera o resto e vai ter uma operação ganhadora.
+
+Ok, Carlisle? Vamos lá.
+[1:59:57] Speaker 2: Vamos lá, Pedro Paulo: "Mesmo sendo iniciante no mercado, estou pensando em colocar R$ 1000 na Equity e ficar fazendo operações de 0.1 pra ir aprendendo e sair da conta demo. É melhor ficar mais um pouco no demo?"
+[2:00:11] Speaker 1: Pedro Paulo, se você já assistiu o curso duas, três vezes, acho que foi você que falou isso, se eu não estou maluco aqui. Se não tiver, assista. Bota lá os mil cruzeiros, você pode operar lote de 0.01. Você está operando aí de décimo, você pode operar de centésimo. E para com a demo e vai ali pra operar de verdade. Agora o seguinte, você não vai operar 0.01, nem 0.1. Você vai operar ou 0.2 ou 0.02, no mínimo.
+
+Por quê? Pra você poder fazer uma parcial. Cara, é vida você botar na tua cabeça que você precisa ter stop loss e que fazer parciais. Se você conseguir administrar essas duas coisas, tu vai ganhar dinheiro, não tem pra onde correr. Vamos lá, Sérgio.
+[2:01:08] Speaker 2: Vamos lá. "A entrada desse sub-20 é fácil de identificar, a banda de Bollinger também. Abrindo é fácil de ver". Ok. "Cícero: Didi, eu vi todas as suas aulas, mas a que mais me chamou a atenção foi o stop loss, onde aprendi que segurança e cautela é o princípio de tudo."
+[2:01:30] Speaker 1: Bacana, Cícero. Nós estamos aqui é pra ganhar, não é pra entregar pra eles, não. Puta! Cada um vem com esse papel. Meu Deus do céu, rapaz! Meu Deus do céu. O papel do China.
+[2:01:48] Speaker 2: "Dois dias atrás teve uma entrada na OIBR4, entrei às 10h. Como sempre faço, o ativo foi a leilão e a hora que voltou ferrou tudo, já teve um kick na ODX. Vazei na hora e tomei pau".
+[2:02:01] Speaker 1: Mas o cara também. O cara está para abrir a porteira na piscina, abrir a porteira do açude e o cacete. É a hora que o cara resolve tomar o banho dele. Na hora que a coisa vai pegar fogo. "Entrou às 10h. O ativo foi a leilão, na hora que voltou, ferrou tudo". Bom, deixa eu te falar uma coisa. Está rolando o pregão e teve o leilão. Aí não tem como você se proteger, Rodrigo, você entendeu? Tem como você se proteger, em primeiro lugar, não ficar tradando essa bosta, que já falei, esse papel tem uma caveira de burro enterrada.
+
+Vai arrumar uma coisa decente para você operar. Quer se meter com droga? Vai fumar maconha, cheirar cocaína. Você pode se meter, rapaz, até com crocodilo. Sabe aquela droga lá na Rússia que vai caindo pedaço da cara do cara, os braços. Se mete com droga assim, não se mete com OIBR, porque isso aí é droga muito pesada. OIBR é a droga mais pesada que tem na face da Terra. Não se mete com gente ruim que tu não se dá mal.
+
+Vamos lá.
+[2:03:15] Speaker 2: Vamos lá. Vanilson Miller: "Onde eu contrato isso, esses pacotes para atualizar o tempo?" Todo mundo recebeu um tutorial do TradingView. Então vai estar lá o link para atualização. Tudo que é bolsa B3, se for ação do mercado americano, tem tudo delay. Só tem online aí essas qualidades de moeda.
+[2:03:39] Speaker 1: Ou se você pagar a bolsa. Aí fica real time.
+[2:03:46] Speaker 2: Não, mas até para todas essas moedas aí já é real time, entendeu? Agora para cada bolsa específica, S&P 500 para cá.
+[2:03:54] Speaker 1: Tem que pagar.
+[2:03:55] Speaker 2: Tem que pagar. É US$ 1 só, Vanilson. Se tu não achar nesse arquivo, tu me envia. Vamos lá, Pedro Paulo: "Melhor coisa que fiz sair de OAB, quando conheci seu curso, mercado é vida".
+[2:04:12] Speaker 1: Graças a Deus, salvou mais uma alma, Sérgio. O cara largou de OAB.
+[2:04:18] Speaker 2: Vamos lá, José Geraldo: "Didi, contratei o TradingView com a B3, deu ruim, paguei US$ 1, não consigo acessar o gráfico das ações do Brasil".
+[2:04:26] Speaker 1: José Geraldo, isso daí é um problema que está dando com o TradingView, você precisa entrar em contato com os caras. Você precisa ligar pro TradingView e falar: "Olha, paguei vocês aí, não estou tendo acesso. Que merda é essa?"
+[2:04:39] Speaker 2: José Geraldo, a gente não trabalha com TradingView.
+[2:04:44] Speaker 1: A gente usa. Eu uso porque eu acho bom. Se vocês veem qual que eu uso, eu falo para vocês, que eu acho bom, porra. Entendeu? Mas para você resolver isso aí, lá com o cara. Você tem o telefone do cara? Eu passo aqui já.
+[2:05:02] Speaker 2: É do Rafael. Vamos lá. Ricardo: "No Didi, noto que tem hora que entramos na agulhada ou no alerta, mas também tem momento que a entrada acontece quando a linha do Didi já havia cruzado a linha média. Estou certo?"
+[2:05:19] Speaker 1: Só um minutinho aqui. Nosso amigo ali que precisa falar com o TradingView, o WhatsApp dele é, anota aí: +1 321. Aliás, Sérgio, bota aí no chat já.
+[2:05:35] Speaker 2: Estou botando aqui, pode falar.
+[2:05:36] Speaker 1: Se tiver algum problema, quiser saber alguma coisa do TradingView, já pode ligar. +1 321 989 4637. Diz: "Olha, paguei e não estou recebendo".
+[2:05:58] Speaker 2: Rafael TradingView. Vamos lá.
+[2:06:07] Speaker 1: Pode sim, Ricardo, pode acontecer. Os sinais não são obrigados a acontecer na mesma hora. O que é obrigado para você entrar é que seja o primeiro momento em que os três sinais estão acontecendo.
+[2:06:21] Speaker 2: Vamos lá, Pedro Paulo. Valeu.
+[2:06:27] Speaker 1: Valeu, Pedro Paulo. Vamos nessa.
+[2:06:28] Speaker 2: João Martins: "Uma hora já é considerado swing trade?"
+[2:06:32] Speaker 1: Com certeza tu vai cair no swing trade. É o que eu já falei, João, 15 minutos no segundo período do pregão, você já deve ficar no swing trade, de uma maneira geral. Sessenta minutos, então, fácil.
+[2:06:45] Speaker 2: Vamos lá. Anísia: "Realmente a história do boi azul e amarelo não vou esquecer nunca mais, caí na gargalhada com o coitado do boi no arame farpado".
+[2:06:56] Speaker 1: Olha, eu falo essa besteira do boi no arame farpado, a pessoa fala: "É uma brincadeira, esse cara é nojento, fica falando essas coisas". Não é. Sabe o que eu quero dizer para você? Que você precisa analisar isso na hora que está acontecendo ali em cima da linha, na hora que o boi está com as pernas por cima do arame e prendeu, você entendeu? O que eu quero dizer é isso, é que é naquele momento. Não é só para falar besteira.
+
+Vamos lá. Coitado do boi mesmo, imagina.
+[2:07:31] Speaker 2: Vamos lá. "Por favor, peço que façam agora a montagem do setup do Didi, porque eu estou sem operar". Me chama amanhã, Mai.
+[2:07:43] Speaker 1: Só chamar amanhã. Já devia ter chamado
+[2:07:48] Speaker 2: Vitor, onde fica esse curso inicial para iniciantes? Para mim aqui aparece apenas o do CST. São as primeiras aulas mesmo, Vitor.
+[2:07:58] Speaker 1: Não. Ele quer saber o curso de iniciante, não do CST.
+[2:08:08] Speaker 2: Mas acho que é as primeiras aulas, não, Didi?
+[2:08:11] Speaker 1: Não, acho que ele está falando do curso que ensina como é que abre conta, como é que tarará, a corretora. Onde é que ele acha isso lá no site?
+[2:08:25] Speaker 2: Eu realmente confesso que não sei, mas está lá. É nas primeiras aulas do negócio. Não sei como é que está discriminado.
+[2:08:35] Speaker 1: Vitor, faz uma gentileza, você vai entrar em contato com o suporte amanhã e vai pedir que eles te mostrem, por favor. Lá no Telegram @suporteDidi01 e @suporteDidi02.
+[2:08:57] Speaker 2: Vamos lá, João Martins: "E aquele grupo que você falou que os alunos poderiam entrar, o grupo do pessoal mais experiente no Telegram?"
+[2:09:04] Speaker 1: Espera aí, João Martins, vai chegar tua hora ainda.
+[2:09:08] Speaker 2: Vamos lá: "Então é sempre para entrar no final do candle do tempo gráfico, certo?"
+[2:09:16] Speaker 1: Isso aí.
+[2:09:19] Speaker 2: Vamos lá. "Boa noite, Didi, sou o Pedroso de Formiga, Minas Gerais, tenho 67 anos e uso a corretora Binance no mercado futuro de criptomoedas. Se estiver em um long e o mercado inverte, posso fazer um short do mesmo ativo?"
+[2:09:38] Speaker 1: Olha só o reflexo de imagens aéreas. Isso a gente chama de virar a mão. É uma das coisas que eu mais admiro nas pessoas que conseguem fazer isso bem. Eu tenho amigo que é um bicho para isso. Ele já é um bicho para operar para qualquer lado, mas na hora que ele vira a mão. É legal! Eu vou te confessar que eu tenho medo, eu fico nervoso, eu prefiro pegar as operações. A Didi já virou a mão várias vezes.
+
+Mas eu prefiro pegar a operação, até porque como a ordem é passada para o corretor, eu digo onde eu entro, onde é que eu saio e acabou, não quero nem saber. Ele só me liga dizendo que fez ou não fez. Vamos lá.
+[2:10:30] Speaker 2: Vamos lá. "Estou com dificuldade de colocar os ativos na tela e os indicadores correspondentes. Estou apanhando no notebook. Gráfico eu estudei."
+[2:10:39] Speaker 1: Legal. Entra em contato com o Sérgio para ele te ajudar nisso amanhã. Não espera nem mais um dia. Sérgio, amanhã tu vai trabalhar.
+[2:10:49] Speaker 2: Beleza, estamos aí.
+[2:10:54] Speaker 1: Olha só, pessoal, só para a gente contar, quem tiver dificuldade de instalar o gráfico, tiver dificuldade de instalar a plataforma de operar, fala com a tua corretora. Está com dificuldade de instalar o gráfico dos que vocês têm aí? Pode falar com o Sérgio. "Ah, eu quero instalar meu gráfico na plataforma XR3PTO4 almejo." Você vai ter que falar com os caras, porque eu nem sei que porra é essa, nem sabia que existia.
+
+Está legal? Vamos lá.
+[2:11:29] Speaker 2: Vamos lá, essa aqui já foi. Matthew: "Você falou da tempestade, você está na Austrália ainda, Didi?"
+[2:11:34] Speaker 1: Não, acabou que eu não fui para a Austrália, Matthew, porque acabei mandando a passagem para minha filha e encontrei com ela no final do ano. E eu ia para a Austrália em janeiro, aí não fui. Eu estou indo agora dia 6 de maio. É isso, não é, Sérgio? 6 de maio?
+[2:11:48] Speaker 2: Acho que é. 6 ou 7.
+[2:11:50] Speaker 1: 6 de junho. Eu vou agora em maio.
+[2:11:55] Speaker 2: Vamos lá. Alan: "Entrei no dia 20/03 na Blau 3 a 13:15".
+[2:12:03] Speaker 1: Vamos lá ver. É aquele papel que a gente ficou curioso.
+[2:12:07] Speaker 2: É. Ele entrou bem depois. A entrada tem que ser no D0 ali, quando está acontecendo.
+[2:12:15] Speaker 1: É, ele entrou tarde. Qual era o tempo gráfico que ele tinha entrado?
+[2:12:41] Speaker 2: É diário. Ele não falou não, mas foi diário, a agulhada foi no diário.
+[2:12:50] Speaker 1: Isso, foi isso aí mesmo. Então aqui, 20/03. Por que ele entrou a 13:15 se a barra estava fechando a 12:50? Alan.
+[2:13:13] Speaker 2: Ele entrou no dia depois.
+[2:13:16] Speaker 1: Não, dia 20/03. Dia 20/03 foi o bagulho. Não, dia 19, está certo.
+[2:13:22] Speaker 2: Dia 19.
+[2:13:23] Speaker 1: Ele atrasou um dia, é verdade. E ele saiu a 12,75. Ele saiu no ponto falso. Saiu no ponto falso. Deu ponto falso, você saiu. Significa que não cumpriu as coisas. Mas legal, deu para ver o que aconteceu.
+[2:13:49] Speaker 2: Pode até voltar realmente aí, mas a agulhada se desfez
+[2:13:55] Speaker 1: Vamos lá.
+[2:13:57] Speaker 2: Vamos lá. Cícero: "Nesse horário 10 horas, qual a melhor bolsa para operar?"
+[2:14:06] Speaker 1: Não tem nenhuma bolsa boa de você operar 10 horas da noite, não. Talvez comece a Ásia lá por 2 horas da manhã, você já tem alguma coisa legal.
+[2:14:17] Speaker 2: Ou então o que ele pode fazer, tem muita gente que fala assim: "Ah, não, só posso operar lá fora". Todo mundo pode operar B3 10 horas da noite, vai analisar o gráfico 10 horas, vai operar no diário e no outro dia lá.
+[2:14:29] Speaker 1: Volta no outro dia.
+[2:14:32] Speaker 2: Pode operar qualquer mercado se for no diário.
+[2:14:36] Speaker 1: Você pegou alguma coisa?
+[2:14:45] Speaker 2: Começa a Nova Zelândia, essas coisas agora.
+[2:14:50] Speaker 1: HK50 começou. Está começando já a se mexer. Vamos lá.
+[2:15:01] Speaker 2: Vamos lá. "Na outra aula você citou a corretora, é a Equiti." Isso daí está tudo documentado lá na nossa indicação de corretoras de software. Mas é a Equiti, tem um link lá que você consegue ganhar pelo menos um spread um pouco menor, que é desse Igor. Vamos lá. Clóvis Lei: "Como saber se o ativo está com liquidez no momento da agulhada?"
+[2:15:36] Speaker 1: Se você estiver operando, não é no momento da agulhada que vai ter liquidez. Você precisa saber se o ativo tem liquidez, você vai ver o número de negócio e a quantidade que é negociado, quantos negócios tem por dia e qual o volume de dinheiro negociado para você saber se tem liquidez ou não. Agora, se você pega os primeiros da bolsa, com certeza tem liquidez o momento todo. Vamos lá, Sérgio. O Forex mais ativo, as criptos mais ativas, todas elas têm liquidez fodida.
+[2:16:07] Speaker 2: Didi, sobre o Stochastic e o Trick, só para ficar claro, para sair do trade eu devo observar apenas se eles estão vendendo ou comprando?
+[2:16:16] Speaker 1: É isso aí. Não é se estão vendendo ou comprando. Se eu vinha numa compra, se agora estão vendendo. E ao contrário também. Se eu vinha vendido, se agora ele está comprando. Se ele está zerando a operação, vamos dizer dele.
+[2:16:32] Speaker 2: Vamos lá, Igor Barroso: "É o gerente de contas da Equiti?"
+[2:16:36] Speaker 1: É isso aí, é esse cara aí que vai atender vocês em português.
+[2:16:42] Speaker 2: Vamos lá. "Como assim um seria 0.01?" Aí é micro mini lote.
+[2:16:51] Speaker 1: É micro..01 é micro. Não. Quem falou que era depois de um mês de curso, Antônio?
+[2:17:09] Speaker 2: Geralmente é depois de dois meses e meio, por aí.
+[2:17:13] Speaker 1: Só cinegra que falou, mas não fomos nós.
+[2:17:20] Speaker 2: É porque a gente dá esse tempo, Antônio, porque assim, às vezes o cara com um mês, o cara ainda tem dúvida, às vezes o cara demora a assistir o curso.
+[2:17:27] Speaker 1: Antônio, a gente olha aqui, o que tem de nego com esse tempo já de curso que nem olhou. Porra!
+[2:17:36] Speaker 2: Então a gente escolhe dois meses, dois meses e meio, justamente para isso. E não acha que a gente está dando curso só agora, não. A gente já dá curso, treinamento, então é a melhor coisa é a gente oferecer isso depois. Para estudar, é muito bom.
+[2:17:53] Speaker 1: Até para o cara aproveitar. Se eu dou no primeiro dia, um mês de experiência, vamos dizer. Se eu dou não, o cara lá dá para você um mês de experiência no primeiro dia, será que em um mês você está pronto para usufruir disso? Pode ser que não, acabou o teu período, perdeu. Vamos lá.
+[2:18:14] Speaker 2: Vamos lá, Flávio Navarro: "HK50 bolha abrindo 180° gigante agora". O Didi já é fominha. Vamos lá. Vanilson: "Gratidão de quanto vocês para pagar o chão".
+[2:18:42] Speaker 1: Vanilson, faça o favor. Vamos lá, Sérgio. Pergunta.
+[2:18:48] Speaker 2: Vinícius: "Se está operando a Solana no diário, eu olho o BTC como tendência macro também no diário?"
+[2:18:56] Speaker 1: Isso aí.
+[2:18:58] Speaker 2: Vamos lá. Soul Simulator: "Didi, sua técnica é demais, parece até magia negra. Dá uma dica ou chamada na chincha para eu tomar coragem de sair do simulador. Eu ainda fico inseguro, mesmo tendo resultados razoáveis".
+[2:19:13] Speaker 1: Soul Simulator, deixa eu falar uma coisa para você. No simulador, tudo vai bem. Vou ser mal-educado aqui para ver se eu consigo te impactar e fazer você sair do simulador, que é o que você está impedindo. Você operar no simulador é igual você fazer sexo solitário. Por quê? Você não ganha dinheiro nenhum. Sexo solitário, você também não engravida ninguém. A emoção do simulador, você não vai perder dinheiro, foda-se.
+
+Mesma coisa o sexo solitário, também a emoção também não tem. Então, bicho, se você pega um cara que a vida inteira só ficou no sexo solitário Você bota lá uma mulher peladona, bonitona na frente dele, sabe o que ele vai fazer? Sexo solitário, porque ele só sabe fazer isso. Por que? Deixa eu te falar uma coisa, o trade tem emoção, e emoção é uma parte muito importante do conjunto todo da coisa até você ganhar o dinheiro dessa operação.
+
+Então você não pode se isentar da emoção. O que eu digo pra você? Abre uma conta no Forex, vá operar lote pequenininho, 0.02, dois lotezinhos de 0.01. Vá operar pequenininho, sabe por quê? Se você perder: "Ah, eu perdi oito cruzeiros". Dane-se. Perdeu 15 cruzeiros, dane-se, deixou de fumar uma cigarro, está ótimo. Você entendeu? Mas vai operar a vera, porque vai dar uma emoçãozinha. Depois você vai crescendo o teu lote.
+
+Quando você opera simulado, sempre que você passa a ordem, a ordem é executada. Muitas vezes quando a gente quer fazer uma operação, principalmente em bolsa, você tenta comprar num preço, ninguém te serve. Então você não faz a operação, você é obrigado a fazer outro preço. Principalmente em bolsa simulado engana demais. Então Forex, lote bem pequenininho.
+[2:21:40] Speaker 2: Vamos lá. Alan: "Obrigado pela avaliação. Então no caso se for operar no dia a dia tem que avaliar os gráficos antes de fechar o mercado". Pode ser que sim ou no outro dia lá, no outro dia deu chance de pegar o preço.
+[2:21:52] Speaker 1: Pode ser, mas no outro dia pode até ser tarde. Pode a coisa já sair guipando e tudo e você ficar de fora.
+[2:21:59] Speaker 2: Mas nesse exemplo aí não foi tarde não. Ele deu uma boa chance aí, você que entrou um pouco lá em cima.
+[2:22:05] Speaker 1: Foi atrasado mesmo. Entrou atrasado.
+[2:22:12] Speaker 2: Vamos lá. Rodrigo: "Sou da OIBR. Faço swing trade e analiso como vão minhas operações à noite. Se identifico uma boa entrada e o mercado está fechado, abre às 10:00, eu entro às 10:00? Qual foi meu erro?"
+[2:22:38] Speaker 1: O teu erro foi não ter visto a coisa no tempo correto pra poder operar no final da barra que você viu. Então você está vendo aí que você ficou atrasado, o mercado fechou, tu vais às 10:00. Se ainda tiver as condições, tiver perto do preço de entrada, tudo mais, tu vai. Se já andou 10 cruzeiros pra cima e de repente tu passa a vez e não entra. Vamos lá.
+[2:23:05] Speaker 2: Vamos lá. Mateus: "Quanto dinheiro seria 0.01 lote do Forex?" Vai depender do ativo que tu vai escolher, Mateus. Mas assim, é tipo dois dólares, um dólar.
+[2:23:21] Speaker 1: Deixa eu dar uma noção pra ele. O que é mais ou menos? A gente quando fala 0.01 é um cent. Está certo? É um centésimo. Se eu tenho ativo de 100 cruzeiros, eu estou operando um centésimo disso, eu estou operando um cruzeiro, eu estou apostando um cruzeiro. Está legal? É mais ou menos assim que tem que ser o seu raciocínio. O Igor vem aí, já aproveita e massacra ele. Fica aí porque eu vou largar ele com vocês.
+[2:24:00] Speaker 2: Ele não me respondeu mais, Didi. Ele achou que ia ser antes de tudo e não respondeu mais. Mas eu vou deixar aqui os links e vou adicionar ele nos grupos lá.
+[2:24:13] Speaker 1: Eu vou pegar ele aqui, espera aí.
+[2:24:21] Speaker 2: Botar aqui o link.
+[2:24:28] Speaker 1: Tem muita pergunta aí, Sérgio, como é que está?
+[2:24:31] Speaker 2: Não, zeramos praticamente aqui, Didi.
+[2:24:33] Speaker 1: Então deixa eu ver se eu coloco o Igor aqui.
+[2:24:36] Speaker 2: Ele não me respondeu mais, não.
+[2:24:42] Speaker 1: Deve estar jantando. Ok, deve estar jantando mesmo. Deixa eu te falar, Sérgio, inclui ele nos grupos amanhã. O pessoal vai estar vendo ele chegar, o Igor Barroso. Já pode atacar ele. Sai atacando ele ali mesmo. Ele vai entrar nos grupos pra poder dar suporte a vocês. Eu sei que eles fazem um negócio lá, toda quarta-feira parece que ele faz uma aulinha, um negócio lá de uma aula pra tirar dúvida de como opera ou não opera, mas toda quarta-feira tem e você pode fazer.
+[2:25:30] Speaker 2: Pra quem é iniciante, esse negócio de valor de lote, de não sei o quê, essa que é a aula. É bem basicona, mas é bem tranquilo pra operar esses conceitos mais básicos. Botei o telefone dele aí.
+[2:25:49] Speaker 1: Botou no site?
+[2:25:52] Speaker 2: Botei.
+[2:25:54] Speaker 1: O pessoal anotou, vamos ver.
+[2:26:03] Speaker 2: É isso, zerou, Didi.
+[2:26:06] Speaker 1: Zerou? Ok, pessoal. Obrigado por terem vindo, conte com a gente. Vá apertando aí a gente no suporte. A gente quer fazer a galera virar vagabundo, pode ter certeza. Vocês podem até achar que não, mas a gente quer fazer isso. Pelo menos eu sei que o dia que eu morrer vai ter nego pra cacete rezando pra mim. Graças a Deus! Então está bom, pessoal. Obrigado, boa noite pra vocês e fiquem com Deus. Obrigado, Sérgio.
+[2:26:37] Speaker 2: Valeu, Didi.
+[2:26:38] Speaker 1: Falamos amanhã.
+[2:26:38] Speaker 2: Um abraço. Tchau tchau!
