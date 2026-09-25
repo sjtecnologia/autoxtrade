@@ -1,3 +1,16 @@
+# Correção AutoXTrade — estado das etapas
+
+## Atualização etapa 03 — 2026-09-25
+
+Etapa 03 implementada e validada no checkout macOS com `backend/.venv/bin/python`.
+
+- F03 corrigido: proteção DWX/MT5 usa modificação identificada da posição (`MODIFY_ORDER` via `modify_position_protection`) e os testes provam que não há fallback para ordem oposta por `place_order`.
+- F09 corrigido: reconciliação read-only compara trades abertos com posições/ordens reportadas pelo conector, sinaliza órfãos/divergências e não executa fechamento, cancelamento, redução ou abertura real.
+- `backend/trading/safety.py` permaneceu intacto; o gate segue fail-closed para execução externa.
+- Pendências mantidas e documentadas: F04 / etapa 04, F05 / etapa 06 e F12 / etapa 05.
+- Validação final da etapa 03: suíte completa `116 passed / 3 xfailed`; `test_safety.py` `31 passed`; `test_dwx_protection.py` `1 passed`; `test_reconciliation.py` `5 passed`; `--runxfail` reproduziu apenas F04/F05.
+- Remoto deste checkout: `git@github.com:sjtecnologia/autoxtrade.git`.
+
 # Correção AutoXTrade — etapa 01
 
 Data: 2026-09-22. **Etapa 01 implementada; suíte completa não aprovada.**
@@ -92,8 +105,8 @@ As 14 falhas anteriores continuam visíveis: 11 por pandas-ta ausente, `test_det
 | Etapa | Escopo de acompanhamento | Estado / aceitação |
 |---|---|---|
 | 01 | Inventário, contenção e base reproduzível | Implementada e testada localmente; suíte geral reprovada, corretoras bloqueadas. |
-| 02 | Envio, confirmação, idempotência e fechamento | Próxima: nenhum closed/P&L sem confirmação; retries e timeout não duplicam exposição. F02/F07/F08. |
-| 03 | Proteção MT5 e reconciliação | Pendente: modificar posição/ticket sem abrir lado oposto; gerir órfãos e pausadas. F03/F09. |
+| 02 | Envio, confirmação, idempotência e fechamento | Implementada e validada antes da etapa 03; contrato seguro preservado. |
+| 03 | Proteção MT5 e reconciliação | Implementada em 2026-09-25: proteção modifica posição/ticket sem abrir lado oposto; reconciliação read-only sinaliza órfãos/divergências. F03/F09 corrigidos. |
 | 04 | Risco e dimensionamento | Pendente: saldo/risco/distância/contrato/step e drawdown reais; revalidar aprovação. F04/F10. |
 | 05 | Dados e continuidade | Pendente: timestamps/frescor/gaps, símbolos válidos, remover ambiguidade de sintéticos; coleta de posições pausadas. F11/F12. |
 | 06 | Validação ML/DiDi | Pendente: rejeitar métricas ruins, integridade de artefatos e dependência pandas-ta. F05/F13. |

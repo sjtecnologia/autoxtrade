@@ -11,10 +11,12 @@ import pytest
 
 from db.models import Trade
 from trading.connectors.types import OrderSide, OrderType
+from trading.connectors.fake_transports import TemporaryDWXTransport
 from trading.connectors.memory_transport import MemoryTransport
 from trading.connectors.simulated import SimulatedConnector
 from trading.contracts import (Capability, CapabilityUnavailable, ExecutionContext,
-                               ExecutionMode, ExecutionResult, Instrument, ResultState)
+                               ExecutionMode, ExecutionResult, Instrument, OrderIntent,
+                               ResultState)
 from trading.safety import AccountNature, ExposureBlocked
 
 
@@ -61,11 +63,18 @@ async def test_failed_protection_cannot_claim_close_without_execution():
 
 async def test_dwx_protection_must_not_open_opposite_order(tmp_path):
     from trading.connectors.dwx import DWXConnector
-    conn = DWXConnector(str(tmp_path))
-    conn.place_order = AsyncMock()
-    # F03 / etapa 03: a proteção MT5 real ainda exige reconciliação por ticket.
-    with pytest.raises((ExposureBlocked, CapabilityUnavailable)):
-        await conn.place_oco_order("TEST", OrderSide.SELL, D("1"), D("110"), D("95"), D("94"))
+    context = _context()
+    transport = TemporaryDWXTransport(context)
+    transport.prices[context.instrument.symbol] = D("100")
+    conn = DWXConnector(str(tmp_path), context=context, transport=transport)
+    entry = await conn.create_order(OrderIntent("entry", context, OrderSide.BUY, OrderType.MARKET, D("1")))
+    conn.place_order = AsyncMock(side_effect=AssertionError("opposite order fallback is forbidden"))
+
+    result = await conn.modify_position_protection(
+        entry.position_id, stop_loss=D("95"), take_profit=D("110"), intent_id="protect")
+
+    assert result.state is ResultState.CONFIRMED
+    assert result.position_id == entry.position_id
     conn.place_order.assert_not_awaited()
 
 

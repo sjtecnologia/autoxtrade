@@ -88,6 +88,13 @@ def _audit(event, args):
             args[1] in (
                 "git rev-parse --git-dir", "git.cmd rev-parse --git-dir", "git.exe rev-parse --git-dir",
                 ["git", "rev-parse", "--git-dir"], ["git.cmd", "rev-parse", "--git-dir"],
+                ["git", "rev-parse", "HEAD"], ["git.cmd", "rev-parse", "HEAD"],
+                ["git.exe", "rev-parse", "HEAD"],
+                ["git", "rev-list", "HEAD", "--count"], ["git.cmd", "rev-list", "HEAD", "--count"],
+                ["git.exe", "rev-list", "HEAD", "--count"],
+                ["git", "show", "-s", "--format=%ci", "HEAD"],
+                ["git.cmd", "show", "-s", "--format=%ci", "HEAD"],
+                ["git.exe", "show", "-s", "--format=%ci", "HEAD"],
             )
             or (
                 isinstance(args[1], (list, tuple))

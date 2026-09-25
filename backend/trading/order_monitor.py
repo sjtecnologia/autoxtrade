@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import settings
 from db.models import Trade, TradeEvent
 from trading.connectors.base import BaseConnector
-from trading.connectors.types import OrderSide, OrderType
+from trading.reconciliation import ReconciliationReport, reconcile_positions
 
 logger = logging.getLogger(__name__)
 
@@ -28,75 +28,16 @@ class OrderMonitor:
         if self._redis:
             await self._redis.aclose()
 
-    async def check_orphan_positions(self) -> None:
-        """Verifica trades "open" sem OCO correspondente na exchange e resolve."""
+    async def check_orphan_positions(self) -> ReconciliationReport:
+        """Sinaliza divergências entre sistema e conector sem executar mutações."""
         result = await self._db.execute(
-            select(Trade).where(Trade.status == "open", Trade.mode == "live")
+            select(Trade).where(Trade.status == "open")
         )
         open_trades = result.scalars().all()
-        if not open_trades:
-            return
-
-        logger.info("[monitor] Verificando %d posições abertas por órfãos...", len(open_trades))
-        for trade in open_trades:
-            try:
-                open_orders = await self._conn.get_open_orders(trade.symbol)
-                has_stop = any(o.type in (OrderType.STOP_MARKET, OrderType.OCO) for o in open_orders)
-                if not has_stop:
-                    logger.warning("[monitor] Trade #%d (%s) sem OCO/stop — tentando recriar", trade.id, trade.symbol)
-                    await self._recreate_stop(trade)
-            except Exception as exc:
-                logger.error("[monitor] Erro ao verificar órfão trade #%d: %s", trade.id, exc)
-
-    async def _recreate_stop(self, trade: Trade) -> None:
-        close_side = OrderSide.SELL if trade.side == "buy" else OrderSide.BUY
-        try:
-            await self._conn.place_order(
-                symbol=trade.symbol,
-                side=close_side,
-                order_type=OrderType.STOP_MARKET,
-                amount=trade.quantity,
-                price=trade.stop_loss,
-            )
-            self._db.add(TradeEvent(
-                trade=trade,
-                event_type="OCO_SET",
-                payload={"note": "stop recriado no startup (órfão)"},
-            ))
-            await self._db.commit()
-            logger.info("[monitor] Stop recriado para trade #%d", trade.id)
-        except Exception as exc:
-            logger.critical("[monitor] Não conseguiu recriar stop para #%d — fechando a mercado: %s", trade.id, exc)
-            await self._close_at_market(trade, "orphan_no_stop")
-
-    async def _close_at_market(self, trade: Trade, reason: str) -> None:
-        import datetime
-        close_side = OrderSide.SELL if trade.side == "buy" else OrderSide.BUY
-        try:
-            order = await self._conn.place_order(
-                symbol=trade.symbol,
-                side=close_side,
-                order_type=OrderType.MARKET,
-                amount=trade.quantity,
-            )
-            exit_price = order.average or await self._conn.get_current_price(trade.symbol)
-        except Exception:
-            exit_price = await self._conn.get_current_price(trade.symbol)
-
-        side_mult = Decimal("1") if trade.side == "buy" else Decimal("-1")
-        pnl_net = (exit_price - trade.entry_price) * trade.quantity * side_mult
-
-        trade.status = "closed"
-        trade.exit_price = exit_price
-        trade.close_at = datetime.datetime.now(datetime.timezone.utc)
-        trade.close_reason = reason
-        trade.pnl_net = pnl_net.quantize(Decimal("0.01"))
-        self._db.add(TradeEvent(
-            trade=trade,
-            event_type="MANUAL_CLOSE",
-            payload={"reason": reason},
-        ))
-        await self._db.commit()
+        report = await reconcile_positions(self._conn, open_trades)
+        for issue in report.issues:
+            logger.warning("[monitor] Reconciliation issue: %s", issue)
+        return report
 
     async def handle_order_update(self, event: dict) -> None:
         """Processa update de ordem recebido via WebSocket e atualiza trade."""
