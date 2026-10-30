@@ -18,12 +18,15 @@ from celery import shared_task
 logger = logging.getLogger(__name__)
 
 
-async def _require_approved_entry(db, market: str, mode: str) -> None:
+async def _require_approved_entry(db, market: str, mode: str, symbol: str = "") -> None:
     """Recheck pause and mode at execution, not only when the signal was created."""
     from sqlalchemy import select
     from db.models import BotConfig
-    from trading.safety import ExposureBlocked, require_entry_mode
-    require_entry_mode(mode)
+    from trading.safety import ExposureBlocked, require_entry_mode, require_paper_new_exposure
+    if mode == "paper":
+        require_paper_new_exposure(symbol)
+    else:
+        require_entry_mode(mode)
     result = await db.execute(select(BotConfig).where(BotConfig.market == market))
     config = result.scalar_one_or_none()
     if config is None or not config.is_active or config.drawdown_status == "PAUSED":
@@ -211,13 +214,23 @@ async def _process_didi_manual_entries(config, settings, Session) -> None:
     from risk.position_sizer import PositionSizer
     from trading.approval_service import EntryApprovalService
     from trading.didi_strategy import evaluate_entry
+    from trading.safety import ExposureBlocked, require_paper_new_exposure
 
     market = config.market
     symbols: list[str] = config.enabled_symbols or []
 
+    if not settings.paper_new_exposure_enabled:
+        logger.warning("[safety] Novas entradas paper desativadas até qualificação OOS positiva")
+        return
+
     approval_service = EntryApprovalService()
     try:
         for symbol in symbols:
+            try:
+                require_paper_new_exposure(symbol)
+            except ExposureBlocked as exc:
+                logger.warning("[safety] %s: entrada paper bloqueada: %s", symbol, exc)
+                continue
             df = _load_ohlcv(symbol, market, settings)
             if df is None or len(df) < 80:
                 continue
@@ -256,6 +269,12 @@ async def _process_didi_manual_entries(config, settings, Session) -> None:
                     if qty <= 0:
                         continue
 
+                    from trading.contracts import context_from_dict
+
+                    bindings = config.execution_context or {}
+                    bound = context_from_dict(bindings.get(symbol))
+                    contract_size = bound.instrument.contract_size or Decimal("1")
+
                     payload = await approval_service.create_pending_entry(
                         market=market,
                         symbol=symbol,
@@ -273,8 +292,12 @@ async def _process_didi_manual_entries(config, settings, Session) -> None:
                         loss_safe=entry_eval.loss_safe,
                         risk_per_unit=entry_eval.risk_per_unit,
                         risk_reward=entry_eval.risk_reward,
-                        risk_amount=entry_eval.risk_per_unit * qty,
-                        potential_gain=abs(entry_eval.take_profit - entry_eval.entry_price) * qty,
+                        risk_amount=entry_eval.risk_per_unit * qty * contract_size,
+                        potential_gain=(
+                            abs(entry_eval.take_profit - entry_eval.entry_price)
+                            * qty
+                            * contract_size
+                        ),
                         analysis=entry_eval.analysis,
                         chart=entry_eval.chart,
                     )
@@ -321,6 +344,83 @@ async def _process_ml_entries(config, settings, Session) -> None:
         logger.info("[trading] %s %s → %s (%.2f%%)", market, symbol, result.signal, result.confidence * 100)
 
 
+async def _current_price_for_approval(
+    symbol: str,
+    market: str,
+    mode: str,
+    execution_context,
+    settings,
+) -> Decimal:
+    """Obtém preço atual, rejeitando cotação velha em vez de usar preço congelado."""
+    if mode == "paper":
+        import pandas as pd
+
+        df = _load_ohlcv(symbol, market, settings)
+        if df is None or df.empty:
+            raise ValueError("preco_atual_indisponivel")
+        last_ts = pd.Timestamp(
+            df["timestamp"].iloc[-1] if "timestamp" in df.columns else df.index[-1]
+        )
+        if last_ts.tzinfo is None:
+            last_ts = last_ts.tz_localize("UTC")
+        age_sec = (pd.Timestamp.now(tz="UTC") - last_ts).total_seconds()
+        max_age = int(getattr(settings, "didi_max_quote_age_sec", 7200) or 7200)
+        if age_sec > max_age:
+            raise ValueError(f"cotacao_desatualizada_{int(age_sec)}s")
+        return Decimal(str(df["close"].iloc[-1]))
+
+    from trading.connectors.factory import get_connector
+
+    connector = get_connector(execution_context, mode=mode)
+    await connector.connect()
+    try:
+        price = Decimal(str(await connector.get_current_price(symbol)))
+    finally:
+        await _close_connector(connector)
+    if price <= 0:
+        raise ValueError("preco_atual_invalido")
+    return price
+
+
+def _reprice_approval_levels(
+    side: str,
+    approved_entry: Decimal,
+    stop_loss: Decimal,
+    take_profit: Decimal | None,
+    current_price: Decimal,
+    max_slippage_pct: float,
+    tick_size: Decimal | None,
+) -> tuple[Decimal, Decimal, Decimal | None]:
+    """Reposiciona entrada/SL/TP preservando distâncias, ou rejeita se desviou demais."""
+    if approved_entry <= 0 or current_price <= 0:
+        raise ValueError("preco_atual_invalido")
+    slippage_pct = abs(current_price - approved_entry) / approved_entry * Decimal("100")
+    if slippage_pct > Decimal(str(max_slippage_pct)):
+        raise ValueError(f"preco_desviou_{slippage_pct:.3f}pct")
+
+    risk_distance = abs(approved_entry - stop_loss)
+    reward_distance = abs(take_profit - approved_entry) if take_profit is not None else None
+
+    def align(price: Decimal) -> Decimal:
+        if not tick_size or tick_size <= 0:
+            return price
+        from decimal import ROUND_HALF_UP
+        return (price / tick_size).to_integral_value(rounding=ROUND_HALF_UP) * tick_size
+
+    new_entry = align(current_price)
+    if side == "buy":
+        new_stop = align(current_price - risk_distance)
+        new_target = align(current_price + reward_distance) if reward_distance is not None else None
+        if new_stop >= new_entry or (new_target is not None and new_target <= new_entry):
+            raise ValueError("niveis_invalidos_apos_reprecificacao")
+    else:
+        new_stop = align(current_price + risk_distance)
+        new_target = align(current_price - reward_distance) if reward_distance is not None else None
+        if new_stop <= new_entry or (new_target is not None and new_target >= new_entry):
+            raise ValueError("niveis_invalidos_apos_reprecificacao")
+    return new_entry, new_stop, new_target
+
+
 async def _process_entry_approvals_async() -> None:
     from sqlalchemy import select
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -329,6 +429,10 @@ async def _process_entry_approvals_async() -> None:
     from db.models import Trade
     from notifications.templates import format_position_opened
     from notifications.telegram import notifier
+    from risk.correlation_checker import CorrelationChecker
+    from risk.drawdown_monitor import DrawdownMonitor
+    from risk.manager import RiskManager
+    from risk.position_sizer import PositionSizer
     from trading.approval_service import EntryApprovalService
     from trading.connectors.factory import get_connector
     from trading.connectors.types import OrderSide
@@ -360,7 +464,7 @@ async def _process_entry_approvals_async() -> None:
                 take_profit = Decimal(str(item["take_profit"]))
 
                 async with Session() as db:
-                    config = await _require_approved_entry(db, market, mode)
+                    config = await _require_approved_entry(db, market, mode, symbol)
                     from trading.contracts import context_from_dict
                     bindings = config.execution_context or {}
                     execution_context = context_from_dict(bindings.get(symbol))
@@ -376,6 +480,42 @@ async def _process_entry_approvals_async() -> None:
                     if existing.scalar_one_or_none() is not None:
                         await svc.mark_entry_failed(approval_id, "ja_existe_posicao_aberta")
                         continue
+
+                    # Preço congelado na aprovação não é preço executável.
+                    # Reprecifica os níveis e revalida o risco com o mercado atual.
+                    current_price = await _current_price_for_approval(
+                        symbol, market, mode, execution_context, settings
+                    )
+                    entry_price, stop_loss, take_profit = _reprice_approval_levels(
+                        item["side"],
+                        entry_price,
+                        stop_loss,
+                        take_profit,
+                        current_price,
+                        float(getattr(settings, "didi_max_entry_slippage_pct", 0.25) or 0.25),
+                        execution_context.instrument.tick_size,
+                    )
+
+                    risk = RiskManager(
+                        db=db,
+                        position_sizer=PositionSizer(),
+                        drawdown_monitor=DrawdownMonitor(db),
+                        correlation_checker=CorrelationChecker(db),
+                    )
+                    risk_result = await risk.can_open_position(
+                        market=market,
+                        symbol=symbol,
+                        entry_price=entry_price,
+                        stop_loss_price=stop_loss,
+                    )
+                    if not risk_result.approved or risk_result.position_size is None:
+                        raise ValueError(f"risco_reprovado: {risk_result.reason}")
+                    max_quantity = risk_result.position_size.quantity
+                    if qty <= 0 or qty > max_quantity:
+                        raise ValueError(
+                            f"quantidade_acima_do_risco: solicitada={qty}, "
+                            f"maxima={max_quantity}"
+                        )
 
                     if mode == "paper":
                         trader = PaperTrader(db, market=market, context=execution_context)
@@ -412,8 +552,17 @@ async def _process_entry_approvals_async() -> None:
                         finally:
                             await _close_connector(connector)
 
-                await notifier.send_message(format_position_opened(trade))
+                # A posição já existe: finaliza o estado antes de notificar para
+                # que uma falha de Telegram não marque a entrada como falha.
                 await svc.mark_entry_executed(approval_id)
+                try:
+                    await notifier.send_message(format_position_opened(trade))
+                except Exception as notify_exc:
+                    logger.error(
+                        "[didi] Posição aberta, mas notificação falhou (%s): %s",
+                        approval_id,
+                        notify_exc,
+                    )
             except Exception as exc:
                 await svc.mark_entry_failed(approval_id, str(exc))
                 logger.error("[didi] Falha ao executar aprovacao %s: %s", approval_id, exc, exc_info=True)
@@ -433,6 +582,7 @@ async def _monitor_open_positions_async() -> None:
     from notifications.templates import format_exit_signal_alert, format_safe_break_armed
     from notifications.telegram import notifier
     from trading.connectors.factory import get_connector
+    from trading.contracts import ResultState
     from trading.didi_strategy import evaluate_exit, evaluate_safe_break
     from trading.order_executor import OrderExecutor
     from trading.paper_trader import PaperTrader
@@ -451,6 +601,38 @@ async def _monitor_open_positions_async() -> None:
                 if df is None or len(df) < 80:
                     continue
 
+                if trade.mode == "paper":
+                    bar = df.iloc[-1]
+                    is_buy = trade.side == "buy"
+                    hit_stop = (
+                        float(bar["low"]) <= float(trade.stop_loss)
+                        if is_buy else float(bar["high"]) >= float(trade.stop_loss)
+                    )
+                    hit_target = bool(trade.take_profit) and (
+                        float(bar["high"]) >= float(trade.take_profit)
+                        if is_buy else float(bar["low"]) <= float(trade.take_profit)
+                    )
+                    if hit_stop or hit_target:
+                        # OHLC não revela qual nível foi tocado primeiro; assume SL.
+                        reason = "SL_HIT" if hit_stop else "TP_HIT"
+                        bar_open = Decimal(str(bar["open"]))
+                        exit_price = trade.stop_loss if hit_stop else trade.take_profit
+                        if is_buy and hit_stop and bar_open < exit_price:
+                            exit_price = bar_open
+                        elif is_buy and hit_target and bar_open > exit_price:
+                            exit_price = bar_open
+                        elif not is_buy and hit_stop and bar_open > exit_price:
+                            exit_price = bar_open
+                        elif not is_buy and hit_target and bar_open < exit_price:
+                            exit_price = bar_open
+                        paper_trader = PaperTrader(db, market=trade.market)
+                        await paper_trader._close_position(trade, exit_price, reason)
+                        logger.info(
+                            "[paper] %s %s fechado por %s no candle %s",
+                            trade.symbol, trade.side, reason, bar.get("timestamp"),
+                        )
+                        continue
+
                 current_price = Decimal(str(df["close"].iloc[-1]))
                 safe_eval = evaluate_safe_break(
                     side="buy" if trade.side == "buy" else "sell",
@@ -460,6 +642,45 @@ async def _monitor_open_positions_async() -> None:
                     trigger_rr=Decimal(str(settings.didi_safe_break_rr)),
                 )
                 if safe_eval.should_move:
+                    # No modo real, o stop só vale se estiver no broker.
+                    if trade.mode != "paper":
+                        try:
+                            from trading.contracts import context_from_dict
+
+                            snapshot = trade.execution_context or {}
+                            from trading.contracts import ExecutionContext
+
+                            allowed = set(ExecutionContext.__dataclass_fields__)
+                            context = context_from_dict(
+                                {k: v for k, v in snapshot.items() if k in allowed}
+                            )
+                            connector = get_connector(context, mode=trade.mode)
+                            await connector.connect()
+                            try:
+                                protection = await connector.modify_position_protection(
+                                    trade.position_id,
+                                    stop_loss=safe_eval.new_stop_loss,
+                                    take_profit=trade.take_profit,
+                                    intent_id=__import__("uuid").uuid4().hex,
+                                )
+                            finally:
+                                await _close_connector(connector)
+                            if protection.state != ResultState.CONFIRMED:
+                                raise RuntimeError(
+                                    f"proteção não confirmada: {protection.state.value}"
+                                )
+                        except Exception as exc:
+                            logger.critical(
+                                "[safety] Safe break NÃO aplicado no broker para trade %s: %s",
+                                trade.id,
+                                exc,
+                            )
+                            await notifier.send_emergency_alert(
+                                f"Safe break não aplicado no broker para trade {trade.id} "
+                                f"({trade.symbol}): {exc}"
+                            )
+                            continue
+
                     trade.stop_loss = safe_eval.new_stop_loss
                     db.add(
                         TradeEvent(
@@ -500,6 +721,122 @@ async def _monitor_open_positions_async() -> None:
                     logger.error("[safety] Real close blocked for trade %s: management adapter unvalidated", trade.id)
     finally:
         await redis_client.aclose()
+        await engine.dispose()
+
+
+@shared_task(name="tasks.trading_tasks.reconcile_open_positions")
+def reconcile_open_positions() -> None:
+    """Confere no broker se cada posição aberta existe e tem stop aplicado."""
+    asyncio.run(_reconcile_open_positions_async())
+
+
+async def _reconcile_open_positions_async() -> None:
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from config import settings
+    from db.models import Trade, TradeEvent
+    from notifications.telegram import notifier
+    from trading.connectors.factory import get_connector
+    from trading.contracts import ExecutionContext, ResultState, context_from_dict
+    from trading.order_executor import OrderExecutor
+
+    engine = create_async_engine(settings.database_url)
+    Session = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        async with Session() as db:
+            result = await db.execute(
+                select(Trade).where(Trade.status == "open", Trade.mode != "paper")
+            )
+            trades = result.scalars().all()
+            for trade in trades:
+                if not trade.position_id:
+                    db.add(TradeEvent(
+                        trade=trade,
+                        event_type="UNRESOLVED_POSITION",
+                        payload={"detail": "open trade sem position_id"},
+                    ))
+                    await db.commit()
+                    continue
+                try:
+                    snapshot = trade.execution_context or {}
+                    allowed = set(ExecutionContext.__dataclass_fields__)
+                    context = context_from_dict(
+                        {k: v for k, v in snapshot.items() if k in allowed}
+                    )
+                    connector = get_connector(context, mode=trade.mode)
+                    await connector.connect()
+                    try:
+                        positions = await connector.list_positions()
+                        broker_position = next(
+                            (p for p in positions if str(p.id) == str(trade.position_id)),
+                            None,
+                        )
+                        if broker_position is None:
+                            db.add(TradeEvent(
+                                trade=trade,
+                                event_type="RECONCILIATION_MISSING_POSITION",
+                                payload={"position_id": trade.position_id},
+                            ))
+                            await db.commit()
+                            await notifier.send_emergency_alert(
+                                f"Posição {trade.position_id} ({trade.symbol}) "
+                                "está aberta no sistema e ausente no broker."
+                            )
+                            continue
+
+                        broker_stop = getattr(broker_position, "stop_loss", None)
+                        stop_matches = (
+                            broker_stop is not None
+                            and Decimal(str(broker_stop)) == Decimal(str(trade.stop_loss))
+                        )
+                        if stop_matches:
+                            continue
+
+                        protection = await connector.modify_position_protection(
+                            trade.position_id,
+                            stop_loss=trade.stop_loss,
+                            take_profit=trade.take_profit,
+                            intent_id=__import__("uuid").uuid4().hex,
+                        )
+                        if protection.state != ResultState.CONFIRMED:
+                            executor = OrderExecutor(connector, db)
+                            closed = await executor._fail_safe_after_protection_error(
+                                trade,
+                                trade.position_id,
+                                trade.stop_loss,
+                                trade.take_profit,
+                                "reconciliação não confirmou proteção",
+                            )
+                            if not closed:
+                                await notifier.send_emergency_alert(
+                                    f"Trade {trade.id} ({trade.symbol}) segue sem "
+                                    "proteção confirmada após reconciliação."
+                                )
+                            continue
+
+                        db.add(TradeEvent(
+                            trade=trade,
+                            event_type="PROTECTION_RECONCILED",
+                            payload={
+                                "position_id": trade.position_id,
+                                "stop_loss": str(trade.stop_loss),
+                            },
+                        ))
+                        await db.commit()
+                    finally:
+                        await _close_connector(connector)
+                except Exception as exc:
+                    logger.error(
+                        "[reconciliation] Falha no trade %s: %s", trade.id, exc, exc_info=True
+                    )
+                    db.add(TradeEvent(
+                        trade=trade,
+                        event_type="RECONCILIATION_ERROR",
+                        payload={"error": str(exc)[:250]},
+                    ))
+                    await db.commit()
+    finally:
         await engine.dispose()
 
 

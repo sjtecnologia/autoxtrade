@@ -1,6 +1,8 @@
 """Isolation is installed before test collection (including import-time effects)."""
 import fcntl
+import hashlib
 import ipaddress
+import json
 import os
 from pathlib import Path
 import socket
@@ -113,15 +115,68 @@ sys.addaudithook(_audit)
 import pydantic_settings
 pydantic_settings.BaseSettings.model_config["env_file"] = None
 os.environ.update({
+    "APP_ENV": "test",
     "API_SECRET_TOKEN": "test-only-token",
     "DATABASE_URL": "postgresql+asyncpg://test:test@127.0.0.1:15432/autoxtrade_test",
     "DATABASE_URL_SYNC": "postgresql://test:test@127.0.0.1:15432/autoxtrade_test",
     "REDIS_URL": "redis://127.0.0.1:16379/15",
     "CELERY_BROKER_URL": "memory://", "CELERY_RESULT_BACKEND": "cache+memory://",
     "BINANCE_API_KEY": "", "BINANCE_API_SECRET": "", "BINANCE_PAPER_MODE": "true",
+    # Test fixtures exercise simulated execution; production default remains fail-closed.
+    "PAPER_NEW_EXPOSURE_ENABLED": "true",
+    # RiskManager sizes paper entries from the isolated ledger's explicit seed capital.
+    "PAPER_INITIAL_CAPITAL": "10000",
+    "PAPER_COSTS_JSON": json.dumps({
+        "BTC/USDT": {"spread_price": "0.001", "commission_rate": "0.001", "slippage_price": "0"},
+        "EURUSD": {"spread_price": "0.001", "commission_rate": "0.001", "slippage_price": "0"},
+        "TEST": {"spread_price": "0.001", "commission_rate": "0.001", "slippage_price": "0"},
+    }),
+    "PAPER_QUALIFICATION_PATH": str(_ROOT / "paper-qualification.json"),
+    "DIDI_TIMEFRAME": "1h", "DIDI_ENTRY_ADX_MIN": "23",
+    "DIDI_RR_TARGET": "2", "DIDI_SAFE_BREAK_RR": "1",
     "TELEGRAM_BOT_TOKEN": "", "TELEGRAM_CHAT_ID": "",
     "MT5_FILES_DIR": str(_ROOT / "mt5"), "REAL_NEW_EXPOSURE_ENABLED": "false",
 })
+_test_costs = json.loads(os.environ["PAPER_COSTS_JSON"])
+_backend_root = Path(__file__).resolve().parents[1]
+# Keep this list in sync with paper.qualification.strategy_fingerprint().
+_fingerprint = hashlib.sha256()
+for _relative in (
+    "trading/didi_strategy.py", "trading/paper_trader.py", "trading/order_executor.py",
+    "trading/contracts.py", "trading/safety.py", "tasks/trading_tasks.py",
+    "paper/backtest.py", "paper/costs.py", "paper/qualification.py",
+):
+    _fingerprint.update(_relative.encode())
+    _fingerprint.update(b"\0")
+    _fingerprint.update((_backend_root / _relative).read_bytes())
+_qualification_fixture = {
+    "created_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+    "strategy_sha256": _fingerprint.hexdigest(),
+    "strategy_parameters": {
+        "timeframe": "1h", "adx_min": 23.0, "rr_target": 2.0,
+        "safe_break_rr": 1.0, "momentum_confirmation": False,
+        "exit_auto_close": False,
+    },
+    "thresholds": {
+        "min_trades_per_fold": 30, "min_win_rate_pct": 48.0,
+        "min_profit_factor": 1.30, "min_expectancy_return_pct": 0.01,
+        "max_drawdown_pct": 20.0, "max_data_age_days": 30,
+    },
+    "costs_by_symbol": _test_costs,
+    "symbols": {
+        symbol: {
+            "qualified": True, "data_age_days": 0,
+            "data_end": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+            "folds": [{"checks": {"min_trades": True, "win_rate": True,
+                                      "profit_factor": True, "expectancy": True,
+                                      "drawdown": True}} for _ in range(2)],
+        }
+        for symbol in _test_costs
+    },
+}
+Path(os.environ["PAPER_QUALIFICATION_PATH"]).write_text(
+    json.dumps(_qualification_fixture), encoding="utf-8"
+)
 # Patch the dotenv source itself: Settings overrides BaseSettings.model_config.
 from pydantic_settings.sources import DotEnvSettingsSource
 DotEnvSettingsSource._read_env_files = lambda self: {}

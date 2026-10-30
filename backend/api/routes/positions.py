@@ -57,18 +57,31 @@ async def get_positions(
     r = aioredis.from_url(settings.redis_url, decode_responses=True)
     positions: list[PositionSchema] = []
     try:
+        from trading.equity import EquityUnavailable, open_position_pnl
+        from trading.market_feed import MarketDataUnavailable, latest_mark_price
+
         for trade in trades:
-            cached_price = await r.get(f"price:{trade.symbol}")
-            current_price = Decimal(cached_price) if cached_price else None
+            current_price = None
+            try:
+                current_price = await latest_mark_price(
+                    r, trade.symbol, trade.market, settings
+                )
+            except MarketDataUnavailable:
+                current_price = None
 
             unrealized_pnl = None
             unrealized_pnl_pct = None
-            if current_price:
-                side_mult = Decimal("1") if trade.side == "buy" else Decimal("-1")
-                unrealized_pnl = (current_price - trade.entry_price) * trade.quantity * side_mult
-                unrealized_pnl_pct = (unrealized_pnl / trade.entry_value * 100).quantize(
-                    Decimal("0.01")
-                )
+            if current_price is not None:
+                try:
+                    unrealized_pnl = open_position_pnl(trade, current_price).quantize(
+                        Decimal("0.01")
+                    )
+                except EquityUnavailable:
+                    unrealized_pnl = None
+                if unrealized_pnl is not None and trade.entry_value:
+                    unrealized_pnl_pct = (
+                        unrealized_pnl / trade.entry_value * 100
+                    ).quantize(Decimal("0.01"))
 
             positions.append(
                 PositionSchema(

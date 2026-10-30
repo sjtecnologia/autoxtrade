@@ -1,0 +1,34 @@
+diff --git a/backend/paper/ledger.py b/backend/paper/ledger.py
+new file mode 100644
+Ledger JSON local para ordens exclusivamente simuladas, com timestamp, símbolo, lado,
+quantidade, preço, fonte do preço, id e status simulated.
+
++diff --git a/backend/paper/run.py b/backend/paper/run.py
++new file mode 100644
++Piloto DiDi paper com fallback sintético determinístico quando DWX_Market_Data.txt está vazio.
++Guards bloqueiam place_order, _write_command, cancelamento, proteção e redução.
++
++diff --git a/backend/trading/reconciliation.py b/backend/trading/reconciliation.py
++@@
+++SourceHealth com availability ok|missing|stale.
+++ReconciliationReport.positions_health explicita ausência de DWX_Positions_*.
++
++diff --git a/backend/trading/connectors/dwx.py b/backend/trading/connectors/dwx.py
++@@
+++positions_source_health() sinaliza missing/stale/ok.
++
++diff --git a/backend/trading/order_monitor.py b/backend/trading/order_monitor.py
++@@
+++Registra availability/detail da fonte de posições no log.
++
++diff --git a/backend/tests/unit/test_paper_run.py b/backend/tests/unit/test_paper_run.py
++new file mode 100644
++Teste de ledger simulated, fonte de preço rotulada e ausência de DWX_Commands_*.
++
++diff --git a/backend/tests/unit/test_reconciliation.py b/backend/tests/unit/test_reconciliation.py
++@@
+++Teste de availability=missing para fonte de posições ausente.
++
++diff --git a/docs/correcao/ESTADO.md b/docs/correcao/ESTADO.md
++@@
+++Etapa 08 concluída; próximo marco: alimentar market data real antes de qualquer evolução.

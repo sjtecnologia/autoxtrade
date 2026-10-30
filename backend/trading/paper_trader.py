@@ -9,12 +9,14 @@ from config import settings
 from db.models import Trade, TradeEvent
 from trading.connectors.types import OrderSide
 from trading.contracts import ExecutionContext, ExecutionMode
-from trading.safety import ExposureBlocked
+from trading.safety import ExposureBlocked, require_paper_new_exposure
+from paper.costs import paper_costs_for
 
 logger = logging.getLogger(__name__)
 
-# Spread simulado (0.1%)
+# Legacy rates used only to close paper positions created before per-symbol costs.
 SIMULATED_SPREAD = Decimal("0.001")
+SIMULATED_COMMISSION = Decimal("0.001")
 
 
 class PaperTrader:
@@ -45,6 +47,8 @@ class PaperTrader:
         ml_confidence: Decimal | None = None,
     ) -> Trade:
         """Cria um trade simulado no banco."""
+        require_paper_new_exposure(symbol)
+        costs = paper_costs_for(symbol)
         context = self._context
         if type(context) is not ExecutionContext:
             raise ExposureBlocked("Paper opening requires server-side execution identity")
@@ -52,11 +56,14 @@ class PaperTrader:
         if context.mode != ExecutionMode.PAPER or context.market != self._market or context.instrument.symbol != symbol:
             raise ExposureBlocked("Paper request conflicts with bound identity")
         context.instrument.validate(quantity, entry_price)
-        spread = entry_price * SIMULATED_SPREAD
+        spread = costs.spread_price + costs.slippage_price
         simulated_entry = (
             entry_price + spread if side == OrderSide.BUY else entry_price - spread
         )
         exchange = context.venue
+        execution_snapshot = context.snapshot()
+        execution_snapshot["paper_costs"] = costs.as_dict()
+        contract_size = context.instrument.contract_size
         trade = Trade(
             market=self._market,
             exchange=exchange,
@@ -67,11 +74,11 @@ class PaperTrader:
             account_id=context.account_id,
             account_nature=context.nature.value,
             instrument_class=context.instrument.asset_class,
-            execution_context=context.snapshot(),
+            execution_context=execution_snapshot,
             identity_status="bound",
             entry_price=simulated_entry,
             quantity=quantity,
-            entry_value=(simulated_entry * quantity).quantize(Decimal("0.01")),
+            entry_value=(simulated_entry * quantity * contract_size).quantize(Decimal("0.01")),
             stop_loss=stop_loss,
             take_profit=take_profit,
             open_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
@@ -83,7 +90,8 @@ class PaperTrader:
             TradeEvent(
                 trade=trade,
                 event_type="ORDER_SENT",
-                payload={"mode": "paper", "symbol": symbol, "side": side.value},
+                payload={"mode": "paper", "symbol": symbol, "side": side.value,
+                         "paper_costs": costs.as_dict(), "contract_size": str(contract_size)},
             )
         )
         await self._db.commit()
@@ -119,17 +127,33 @@ class PaperTrader:
         qty = trade.quantity
         entry = trade.entry_price
         side_mult = Decimal("1") if trade.side == "buy" else Decimal("-1")
-        spread = exit_price * SIMULATED_SPREAD
+        snapshot = trade.execution_context or {}
+        cost_data = snapshot.get("paper_costs") or {}
+        try:
+            spread_price = Decimal(str(cost_data["spread_price"]))
+            commission_rate = Decimal(str(cost_data["commission_rate"]))
+            slippage_price = Decimal(str(cost_data["slippage_price"]))
+        except (KeyError, ValueError):
+            # Existing open trades predate symbol-specific costs; preserve their legacy model.
+            spread_price = Decimal("0")
+            commission_rate = SIMULATED_COMMISSION
+            slippage_price = Decimal("0")
+        spec = snapshot.get("instrument") or {}
+        contract_size = (
+            Decimal(str(spec.get("contract_size") or "1"))
+            if cost_data else Decimal("1")
+        )
+        spread = spread_price + slippage_price
         simulated_exit = exit_price - spread if trade.side == "buy" else exit_price + spread
 
-        pnl_gross = (simulated_exit - entry) * qty * side_mult
-        commission = (entry * qty + simulated_exit * qty) * Decimal("0.001")
+        pnl_gross = (simulated_exit - entry) * qty * contract_size * side_mult
+        commission = (entry + simulated_exit) * qty * contract_size * commission_rate
         pnl_net = pnl_gross - commission
-        pnl_pct = pnl_net / trade.entry_value * 100
+        pnl_pct = pnl_net / trade.entry_value * 100 if trade.entry_value else Decimal("0")
 
         trade.status = "closed"
         trade.exit_price = simulated_exit
-        trade.exit_value = (simulated_exit * qty).quantize(Decimal("0.01"))
+        trade.exit_value = (simulated_exit * qty * contract_size).quantize(Decimal("0.01"))
         trade.close_at = datetime.datetime.now(datetime.timezone.utc)
         trade.close_reason = reason
         trade.pnl_gross = pnl_gross.quantize(Decimal("0.01"))

@@ -61,6 +61,7 @@ class PositionSizer:
         max_quantity: Decimal | None = None,
         leverage: Decimal = Decimal("1"),
         max_position_pct: Decimal = Decimal("10"),
+        contract_size: Decimal = Decimal("1"),
     ) -> PositionSizeResult:
         """
         Calcula o tamanho da posição com base no risco fixo por trade.
@@ -68,14 +69,19 @@ class PositionSizer:
         Fórmula:
             stop_distance = |entry - stop| / entry
             risk_amount   = capital * (risk_pct / 100)
-            quantity_raw  = risk_amount / (entry * stop_distance)
+            risk_per_unit = entry * stop_distance * contract_size
+            quantity_raw  = risk_amount / risk_per_unit
             quantity      = floor(quantity_raw / step_size) * step_size
 
         Limites:
-            - quantity * entry <= capital * max_position_pct% * leverage
+            - quantity * entry * contract_size <= capital * max_position_pct% * leverage
             - min_quantity <= quantity <= max_quantity, quando informados
             - capital > 0
             - stop_distance > 0
+
+        `contract_size` é a quantidade de unidades do ativo por 1 lote/contrato.
+        Para spot cripto normalmente é 1; para forex pode ser 100.000. Ignorar
+        esse fator superdimensiona a posição em ordens de grandeza.
 
         Raises:
             PositionSizingError: se os parâmetros violarem as regras.
@@ -92,6 +98,8 @@ class PositionSizer:
             raise PositionSizingError("Alavancagem deve ser positiva.")
         if max_position_pct <= Decimal("0"):
             raise PositionSizingError("Percentual máximo de posição deve ser positivo.")
+        if contract_size <= Decimal("0"):
+            raise PositionSizingError("Contract size deve ser positivo.")
         if min_quantity is not None and min_quantity <= Decimal("0"):
             raise PositionSizingError("Quantidade mínima deve ser positiva.")
         if max_quantity is not None and max_quantity <= Decimal("0"):
@@ -109,14 +117,17 @@ class PositionSizer:
             stop_distance = Decimal("0.001")
 
         risk_amount = capital * (risk_pct / Decimal("100"))
-        quantity_raw = risk_amount / (entry_price * stop_distance)
+        risk_per_unit = entry_price * stop_distance * contract_size
+        quantity_raw = risk_amount / risk_per_unit
         quantity = (quantity_raw / step_size).to_integral_value(ROUND_DOWN) * step_size
 
         # Cap: máximo configurado do capital, ajustado pela alavancagem validada.
+        # O notional real considera o contract_size (1 lote de EURUSD != 1 EUR).
         max_position_value = capital * (max_position_pct / Decimal("100")) * leverage
-        if quantity * entry_price > max_position_value:
+        if quantity * entry_price * contract_size > max_position_value:
             quantity = (
-                (max_position_value / entry_price / step_size).to_integral_value(ROUND_DOWN)
+                (max_position_value / (entry_price * contract_size) / step_size)
+                .to_integral_value(ROUND_DOWN)
                 * step_size
             )
             logger.info(
@@ -145,7 +156,7 @@ class PositionSizer:
             entry_price=entry_price,
             stop_loss_price=stop_loss_price,
             stop_distance_pct=(stop_distance * 100).quantize(Decimal("0.0001")),
-            position_value=(quantity * entry_price).quantize(Decimal("0.01")),
+            position_value=(quantity * entry_price * contract_size).quantize(Decimal("0.01")),
         )
 
     async def get_step_size(self, symbol: str) -> Decimal:

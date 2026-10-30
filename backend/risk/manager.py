@@ -116,12 +116,34 @@ class RiskManager:
         instrument = context.instrument if context else None
         quote_asset = (getattr(instrument, "quote_currency", None)
                        or getattr(config, "account_currency", None) or "USDT")
-        capital = self._decimal_or_default(
-            await self._maybe_await(self._sizer.get_available_capital(quote_asset)),
-            Decimal("10000"),
-        )
+        if config.mode == "paper":
+            from trading.equity import paper_available_capital
+
+            capital = await paper_available_capital(self._db, market)
+            capital_source = "paper_ledger"
+        else:
+            capital = self._decimal_or_default(
+                await self._maybe_await(self._sizer.get_available_capital(quote_asset)),
+                Decimal("0"),
+            )
+            capital_source = "broker"
         if capital <= Decimal("0"):
-            capital = Decimal("10000")
+            # Fail-closed: nunca dimensionar uma ordem com capital inventado.
+            return RiskCheckResult(
+                approved=False,
+                reason=(
+                    f"Capital indisponível para {quote_asset} ({capital_source}); "
+                    "entrada bloqueada."
+                ),
+            )
+        contract_size = getattr(instrument, "contract_size", None)
+        if market in {"B3", "FOREX"} and contract_size is None:
+            return RiskCheckResult(
+                approved=False,
+                reason=f"Contract size ausente para {symbol}; entrada bloqueada.",
+            )
+        if contract_size is None:
+            contract_size = Decimal("1")
         step_size = getattr(instrument, "volume_step", None)
         if step_size is None:
             step_size = self._decimal_or_default(
@@ -138,6 +160,7 @@ class RiskManager:
                 min_quantity=getattr(instrument, "min_volume", None),
                 max_quantity=getattr(instrument, "max_volume", None),
                 leverage=leverage,
+                contract_size=contract_size,
             )
         except PositionSizingError as exc:
             return RiskCheckResult(approved=False, reason=str(exc))

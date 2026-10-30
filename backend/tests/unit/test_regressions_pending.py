@@ -49,16 +49,20 @@ async def test_failed_protection_cannot_claim_close_without_execution():
     conn = SimulatedConnector(context, transport=transport)
     conn.modify_position_protection = AsyncMock(return_value=ExecutionResult(
         "protection", ResultState.REJECTED, reason="simulated rejection"))
+    conn.reduce_position = AsyncMock(return_value=ExecutionResult(
+        "close", ResultState.REJECTED, reason="close not confirmed"))
     db = AsyncMock()
     db.add = MagicMock()
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
     executor = OrderExecutor(conn, db)
-    with pytest.raises(OrderExecutionError, match="Protection not confirmed"):
+    with pytest.raises(OrderExecutionError, match="UNPROTECTED"):
         await executor.open_position("TEST", OrderSide.BUY, D("1"), D("100"), D("95"))
     trade = next(call.args[0] for call in db.add.call_args_list
                  if getattr(call.args[0], "status", None) == "open")
-    assert trade.status == "open", "No confirmed protection; preserve unresolved exposure"
+    assert trade.status == "open", "No confirmed close; preserve unresolved exposure"
+    event_types = [getattr(call.args[0], "event_type", None) for call in db.add.call_args_list]
+    assert "UNPROTECTED_POSITION" in event_types
 
 
 async def test_dwx_protection_must_not_open_opposite_order(tmp_path):
@@ -78,8 +82,10 @@ async def test_dwx_protection_must_not_open_opposite_order(tmp_path):
     conn.place_order.assert_not_awaited()
 
 
-async def test_risk_must_use_sizer_and_drawdown():
+async def test_risk_must_use_sizer_and_drawdown(monkeypatch):
     from risk.manager import RiskManager
+    from trading import equity
+    monkeypatch.setattr(equity, "paper_available_capital", AsyncMock(return_value=D("10000")))
     db = AsyncMock()
     config = SimpleNamespace(is_active=True, drawdown_status="OK", max_open_trades=3,
                              mode="paper", max_corr_threshold=D("0.7"),
@@ -89,11 +95,12 @@ async def test_risk_must_use_sizer_and_drawdown():
     trades_result.scalars.return_value.all.return_value = []
     db.execute.side_effect = [cfg_result, trades_result]
     sizer, drawdown, correlation = MagicMock(), AsyncMock(), AsyncMock()
+    sizer.get_available_capital.return_value = D("10000")
     sizing = SimpleNamespace(quantity=D("0.25"), risk_amount=D("5"), risk_pct=D("1"))
     sizer.calculate.return_value = sizing
     correlation.check.return_value = SimpleNamespace(blocked=False)
     result = await RiskManager(db, sizer, drawdown, correlation).can_open_position(
-        "FOREX", "TEST", D("100"), D("80"))
+        "CRIPTO", "TEST", D("100"), D("80"))
     assert result.position_size.quantity == sizing.quantity
     sizer.calculate.assert_called_once()
 

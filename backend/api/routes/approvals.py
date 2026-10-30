@@ -163,15 +163,23 @@ async def approve_entry(
         if payload.quantity is not None:
             updated = await svc.set_entry_quantity(approval_id, payload.quantity)
             if updated is None:
-                raise HTTPException(status_code=404, detail="Aprovacao nao encontrada ou expirada")
-        data = await svc.update_entry_status(approval_id, "approved")
+                raise HTTPException(
+                    status_code=409,
+                    detail="Aprovacao nao esta pendente, expirou ou foi alterada por outro operador",
+                )
+        data = await svc.update_entry_status(
+            approval_id, "approved", expected_status="pending"
+        )
     except ExposureBlocked as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     finally:
         await svc.close()
 
     if data is None:
-        raise HTTPException(status_code=404, detail="Aprovacao nao encontrada ou expirada")
+        raise HTTPException(
+            status_code=409,
+            detail="Aprovacao nao esta pendente, expirou ou foi alterada por outro operador",
+        )
 
     return EntryApprovalDecisionResponse(id=approval_id, status=data["status"])
 
@@ -183,11 +191,16 @@ async def reject_entry(
 ) -> EntryApprovalDecisionResponse:
     svc = EntryApprovalService()
     try:
-        data = await svc.update_entry_status(approval_id, "rejected")
+        data = await svc.update_entry_status(
+            approval_id, "rejected", expected_status="pending"
+        )
     finally:
         await svc.close()
 
     if data is None:
-        raise HTTPException(status_code=404, detail="Aprovacao nao encontrada ou expirada")
+        raise HTTPException(
+            status_code=409,
+            detail="Aprovacao nao esta pendente, expirou ou foi alterada por outro operador",
+        )
 
     return EntryApprovalDecisionResponse(id=approval_id, status=data["status"])

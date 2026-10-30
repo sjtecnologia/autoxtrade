@@ -1,0 +1,458 @@
+{
+  "run_at_utc": "2026-10-29T19:18:05.098826+00:00",
+  "source": "Yahoo Finance chart API, CCY FX aggregate",
+  "source_url": "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=2y&interval=1h",
+  "granularity": "1h",
+  "history": "2 years, latest forming candle excluded",
+  "strategy": "current DiDi code; target/stop from signal candle; safe-break at completed candle; auto signal close follows DIDI_EXIT_AUTO_CLOSE=false",
+  "safety": "offline replay only; no broker credentials, orders, or real money",
+  "cost_scenario": "SIMULATED, NOT broker-verified: assumed half-spread 0.5-0.8 pip/side, slippage 0.2-0.3 pip/side, commission 0.00007 of notional/side",
+  "thresholds": "each of two chronological OOS folds: >=30 trades, >=48% net win rate, net PF >=1.30, expectancy >0.01%/trade, drawdown <=20%; data <=30 days old",
+  "results": {
+    "EURUSD.pr": {
+      "ticker": "EURUSD=X",
+      "bars": 12317,
+      "data_start": "2024-10-29 19:00:00+00:00",
+      "last_closed_bar": "2026-10-29 18:00:00+00:00",
+      "source_latest_tick": "2026-10-29T19:17:44+00:00",
+      "source_price": 1.1166,
+      "currency": "USD",
+      "costs_simulated": {
+        "spread_price": "0.00005",
+        "commission_rate": "0.00007",
+        "slippage_price": "0.00002"
+      },
+      "qualified": false,
+      "reasons": [
+        "fold_1_win_rate_failed",
+        "fold_1_profit_factor_failed",
+        "fold_1_expectancy_failed",
+        "fold_2_win_rate_failed",
+        "fold_2_profit_factor_failed",
+        "fold_2_expectancy_failed"
+      ],
+      "folds": [
+        {
+          "fold": 1,
+          "start": "2025-10-29T02:00:00+00:00",
+          "end": "2026-04-30T23:00:00+00:00",
+          "trades": 47,
+          "win_rate_pct": 29.79,
+          "profit_factor": 0.5464,
+          "expectancy_return_pct": -0.057495,
+          "max_drawdown_pct": 3.014,
+          "pnl_price_units": -0.031615,
+          "checks": {
+            "min_trades": true,
+            "win_rate": false,
+            "profit_factor": false,
+            "expectancy": false,
+            "drawdown": true
+          }
+        },
+        {
+          "fold": 2,
+          "start": "2026-05-01T00:00:00+00:00",
+          "end": "2026-10-29T18:00:00+00:00",
+          "trades": 44,
+          "win_rate_pct": 29.55,
+          "profit_factor": 0.6403,
+          "expectancy_return_pct": -0.052503,
+          "max_drawdown_pct": 2.5166,
+          "pnl_price_units": -0.026098,
+          "checks": {
+            "min_trades": true,
+            "win_rate": false,
+            "profit_factor": false,
+            "expectancy": false,
+            "drawdown": true
+          }
+        }
+      ]
+    },
+    "GBPUSD.pr": {
+      "ticker": "GBPUSD=X",
+      "bars": 12320,
+      "data_start": "2024-10-29 19:00:00+00:00",
+      "last_closed_bar": "2026-10-29 18:00:00+00:00",
+      "source_latest_tick": "2026-10-29T19:17:44+00:00",
+      "source_price": 1.3365,
+      "currency": "USD",
+      "costs_simulated": {
+        "spread_price": "0.00008",
+        "commission_rate": "0.00007",
+        "slippage_price": "0.00003"
+      },
+      "qualified": false,
+      "reasons": [
+        "fold_1_min_trades_failed",
+        "fold_1_win_rate_failed",
+        "fold_1_profit_factor_failed",
+        "fold_1_expectancy_failed",
+        "fold_2_win_rate_failed",
+        "fold_2_profit_factor_failed",
+        "fold_2_expectancy_failed"
+      ],
+      "folds": [
+        {
+          "fold": 1,
+          "start": "2025-10-29T03:00:00+00:00",
+          "end": "2026-05-01T00:00:00+00:00",
+          "trades": 26,
+          "win_rate_pct": 30.77,
+          "profit_factor": 0.5855,
+          "expectancy_return_pct": -0.067851,
+          "max_drawdown_pct": 2.4402,
+          "pnl_price_units": -0.02391,
+          "checks": {
+            "min_trades": false,
+            "win_rate": false,
+            "profit_factor": false,
+            "expectancy": false,
+            "drawdown": true
+          }
+        },
+        {
+          "fold": 2,
+          "start": "2026-05-01T01:00:00+00:00",
+          "end": "2026-10-29T18:00:00+00:00",
+          "trades": 46,
+          "win_rate_pct": 39.13,
+          "profit_factor": 1.0534,
+          "expectancy_return_pct": 0.005717,
+          "max_drawdown_pct": 1.4017,
+          "pnl_price_units": 0.003387,
+          "checks": {
+            "min_trades": true,
+            "win_rate": false,
+            "profit_factor": false,
+            "expectancy": false,
+            "drawdown": true
+          }
+        }
+      ]
+    },
+    "USDJPY.pr": {
+      "ticker": "USDJPY=X",
+      "bars": 12249,
+      "data_start": "2024-10-29 19:00:00+00:00",
+      "last_closed_bar": "2026-10-29 18:00:00+00:00",
+      "source_latest_tick": "2026-10-29T19:19:02+00:00",
+      "source_price": 157.919,
+      "currency": "JPY",
+      "costs_simulated": {
+        "spread_price": "0.0075",
+        "commission_rate": "0.00007",
+        "slippage_price": "0.003"
+      },
+      "qualified": false,
+      "reasons": [
+        "fold_1_win_rate_failed",
+        "fold_1_profit_factor_failed",
+        "fold_2_win_rate_failed",
+        "fold_2_profit_factor_failed",
+        "fold_2_expectancy_failed"
+      ],
+      "folds": [
+        {
+          "fold": 1,
+          "start": "2025-10-29T05:00:00+00:00",
+          "end": "2026-05-01T00:00:00+00:00",
+          "trades": 38,
+          "win_rate_pct": 34.21,
+          "profit_factor": 1.1213,
+          "expectancy_return_pct": 0.016516,
+          "max_drawdown_pct": 2.7327,
+          "pnl_price_units": 0.978673,
+          "checks": {
+            "min_trades": true,
+            "win_rate": false,
+            "profit_factor": false,
+            "expectancy": true,
+            "drawdown": true
+          }
+        },
+        {
+          "fold": 2,
+          "start": "2026-05-01T01:00:00+00:00",
+          "end": "2026-10-29T18:00:00+00:00",
+          "trades": 35,
+          "win_rate_pct": 37.14,
+          "profit_factor": 0.7744,
+          "expectancy_return_pct": -0.030601,
+          "max_drawdown_pct": 1.247,
+          "pnl_price_units": -1.631152,
+          "checks": {
+            "min_trades": true,
+            "win_rate": false,
+            "profit_factor": false,
+            "expectancy": false,
+            "drawdown": true
+          }
+        }
+      ]
+    },
+    "AUDUSD.pr": {
+      "ticker": "AUDUSD=X",
+      "bars": 12381,
+      "data_start": "2024-10-29 19:00:00+00:00",
+      "last_closed_bar": "2026-10-29 18:00:00+00:00",
+      "source_latest_tick": "2026-10-29T19:18:44+00:00",
+      "source_price": 0.7034,
+      "currency": "USD",
+      "costs_simulated": {
+        "spread_price": "0.00007",
+        "commission_rate": "0.00007",
+        "slippage_price": "0.00002"
+      },
+      "qualified": false,
+      "reasons": [
+        "fold_1_min_trades_failed",
+        "fold_1_win_rate_failed",
+        "fold_1_profit_factor_failed",
+        "fold_1_expectancy_failed",
+        "fold_2_min_trades_failed",
+        "fold_2_win_rate_failed",
+        "fold_2_profit_factor_failed",
+        "fold_2_expectancy_failed"
+      ],
+      "folds": [
+        {
+          "fold": 1,
+          "start": "2025-10-28T22:00:00+00:00",
+          "end": "2026-04-30T06:00:00+00:00",
+          "trades": 24,
+          "win_rate_pct": 41.67,
+          "profit_factor": 0.9488,
+          "expectancy_return_pct": -0.010631,
+          "max_drawdown_pct": 1.8235,
+          "pnl_price_units": -0.001232,
+          "checks": {
+            "min_trades": false,
+            "win_rate": false,
+            "profit_factor": false,
+            "expectancy": false,
+            "drawdown": true
+          }
+        },
+        {
+          "fold": 2,
+          "start": "2026-04-30T07:00:00+00:00",
+          "end": "2026-10-29T18:00:00+00:00",
+          "trades": 28,
+          "win_rate_pct": 25.0,
+          "profit_factor": 0.7748,
+          "expectancy_return_pct": -0.035552,
+          "max_drawdown_pct": 1.8298,
+          "pnl_price_units": -0.006975,
+          "checks": {
+            "min_trades": false,
+            "win_rate": false,
+            "profit_factor": false,
+            "expectancy": false,
+            "drawdown": true
+          }
+        }
+      ]
+    },
+    "NZDUSD.pr": {
+      "ticker": "NZDUSD=X",
+      "bars": 12383,
+      "data_start": "2024-10-29 19:00:00+00:00",
+      "last_closed_bar": "2026-10-29 18:00:00+00:00",
+      "source_latest_tick": "2026-10-29T19:18:44+00:00",
+      "source_price": 0.5632,
+      "currency": "USD",
+      "costs_simulated": {
+        "spread_price": "0.00008",
+        "commission_rate": "0.00007",
+        "slippage_price": "0.00003"
+      },
+      "qualified": false,
+      "reasons": [
+        "fold_1_min_trades_failed",
+        "fold_1_win_rate_failed",
+        "fold_1_profit_factor_failed",
+        "fold_1_expectancy_failed",
+        "fold_2_min_trades_failed",
+        "fold_2_win_rate_failed"
+      ],
+      "folds": [
+        {
+          "fold": 1,
+          "start": "2025-10-28T23:00:00+00:00",
+          "end": "2026-04-30T08:00:00+00:00",
+          "trades": 21,
+          "win_rate_pct": 33.33,
+          "profit_factor": 0.8835,
+          "expectancy_return_pct": -0.021127,
+          "max_drawdown_pct": 2.5025,
+          "pnl_price_units": -0.002662,
+          "checks": {
+            "min_trades": false,
+            "win_rate": false,
+            "profit_factor": false,
+            "expectancy": false,
+            "drawdown": true
+          }
+        },
+        {
+          "fold": 2,
+          "start": "2026-04-30T09:00:00+00:00",
+          "end": "2026-10-29T18:00:00+00:00",
+          "trades": 24,
+          "win_rate_pct": 33.33,
+          "profit_factor": 1.3609,
+          "expectancy_return_pct": 0.051411,
+          "max_drawdown_pct": 2.5911,
+          "pnl_price_units": 0.00738,
+          "checks": {
+            "min_trades": false,
+            "win_rate": false,
+            "profit_factor": true,
+            "expectancy": true,
+            "drawdown": true
+          }
+        }
+      ]
+    },
+    "USDCAD.pr": {
+      "ticker": "USDCAD=X",
+      "bars": 12382,
+      "data_start": "2024-10-29 19:00:00+00:00",
+      "last_closed_bar": "2026-10-29 18:00:00+00:00",
+      "source_latest_tick": "2026-10-29T19:20:53+00:00",
+      "source_price": 1.3986,
+      "currency": "CAD",
+      "costs_simulated": {
+        "spread_price": "0.00008",
+        "commission_rate": "0.00007",
+        "slippage_price": "0.00003"
+      },
+      "qualified": false,
+      "reasons": [
+        "fold_1_win_rate_failed",
+        "fold_1_profit_factor_failed",
+        "fold_1_expectancy_failed",
+        "fold_2_win_rate_failed",
+        "fold_2_profit_factor_failed",
+        "fold_2_expectancy_failed"
+      ],
+      "folds": [
+        {
+          "fold": 1,
+          "start": "2025-10-29T02:00:00+00:00",
+          "end": "2026-04-30T10:00:00+00:00",
+          "trades": 51,
+          "win_rate_pct": 27.45,
+          "profit_factor": 0.6086,
+          "expectancy_return_pct": -0.037643,
+          "max_drawdown_pct": 2.5025,
+          "pnl_price_units": -0.026262,
+          "checks": {
+            "min_trades": true,
+            "win_rate": false,
+            "profit_factor": false,
+            "expectancy": false,
+            "drawdown": true
+          }
+        },
+        {
+          "fold": 2,
+          "start": "2026-04-30T11:00:00+00:00",
+          "end": "2026-10-29T18:00:00+00:00",
+          "trades": 60,
+          "win_rate_pct": 36.67,
+          "profit_factor": 0.7423,
+          "expectancy_return_pct": -0.025121,
+          "max_drawdown_pct": 2.0327,
+          "pnl_price_units": -0.021206,
+          "checks": {
+            "min_trades": true,
+            "win_rate": false,
+            "profit_factor": false,
+            "expectancy": false,
+            "drawdown": true
+          }
+        }
+      ]
+    },
+    "USDCHF.pr": {
+      "ticker": "USDCHF=X",
+      "bars": 12261,
+      "data_start": "2024-10-29 19:00:00+00:00",
+      "last_closed_bar": "2026-10-29 18:00:00+00:00",
+      "source_latest_tick": "2026-10-29T19:21:18+00:00",
+      "source_price": 0.8262,
+      "currency": "CHF",
+      "costs_simulated": {
+        "spread_price": "0.00008",
+        "commission_rate": "0.00007",
+        "slippage_price": "0.00003"
+      },
+      "qualified": false,
+      "reasons": [
+        "fold_1_min_trades_failed",
+        "fold_1_win_rate_failed",
+        "fold_1_profit_factor_failed",
+        "fold_1_expectancy_failed",
+        "fold_2_win_rate_failed",
+        "fold_2_profit_factor_failed",
+        "fold_2_expectancy_failed"
+      ],
+      "folds": [
+        {
+          "fold": 1,
+          "start": "2025-10-29T01:00:00+00:00",
+          "end": "2026-04-30T19:00:00+00:00",
+          "trades": 28,
+          "win_rate_pct": 42.86,
+          "profit_factor": 0.812,
+          "expectancy_return_pct": -0.029309,
+          "max_drawdown_pct": 2.1301,
+          "pnl_price_units": -0.006124,
+          "checks": {
+            "min_trades": false,
+            "win_rate": false,
+            "profit_factor": false,
+            "expectancy": false,
+            "drawdown": true
+          }
+        },
+        {
+          "fold": 2,
+          "start": "2026-04-30T20:00:00+00:00",
+          "end": "2026-10-29T18:00:00+00:00",
+          "trades": 34,
+          "win_rate_pct": 29.41,
+          "profit_factor": 0.4423,
+          "expectancy_return_pct": -0.108366,
+          "max_drawdown_pct": 3.639,
+          "pnl_price_units": -0.029366,
+          "checks": {
+            "min_trades": true,
+            "win_rate": false,
+            "profit_factor": false,
+            "expectancy": false,
+            "drawdown": true
+          }
+        }
+      ]
+    }
+  },
+  "qualified_symbols": [],
+  "strategy_sha256": "11df1376bdf19c90a401ba82cd82d0c9fbed90c39904b8cf02d63dc911ba1a08",
+  "strategy_parameters": {
+    "timeframe": "1h",
+    "adx_min": 23.0,
+    "rr_target": 2.0,
+    "safe_break_rr": 1.0,
+    "momentum_confirmation": false,
+    "exit_auto_close": true
+  },
+  "diagnostic_only": true,
+  "source_type": "public_aggregated_delayed_market_data",
+  "no_broker_connection": true,
+  "no_orders_sent": true,
+  "no_real_money_used": true
+}

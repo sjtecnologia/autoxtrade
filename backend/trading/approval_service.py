@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
@@ -10,15 +11,45 @@ from uuid import uuid4
 import redis.asyncio as aioredis
 
 from config import settings
-from trading.safety import ExposureBlocked, require_entry_mode
+from trading.safety import ExposureBlocked, require_entry_mode, require_paper_new_exposure
 
 
 class EntryApprovalService:
+    _LOCK_TTL_MS = 5000
+    _ALLOWED_TRANSITIONS = {
+        "pending": {"approved", "rejected"},
+        "approved": {"executing", "failed", "rejected"},
+        "executing": {"executed", "failed"},
+    }
+
     def __init__(self) -> None:
         self._redis = aioredis.from_url(settings.redis_url, decode_responses=True)
 
     async def close(self) -> None:
         await self._redis.aclose()
+
+    @asynccontextmanager
+    async def _lock(self, approval_id: str):
+        """Serializa transições por aprovação; sem lock não há escrita."""
+        lock_key = f"approval:entry:lock:{approval_id}"
+        token = uuid4().hex
+        acquired = await self._redis.set(
+            lock_key, token, nx=True, px=self._LOCK_TTL_MS
+        )
+        try:
+            yield bool(acquired)
+        finally:
+            if acquired:
+                try:
+                    await self._redis.eval(
+                        "if redis.call('get', KEYS[1]) == ARGV[1] "
+                        "then return redis.call('del', KEYS[1]) end",
+                        1,
+                        lock_key,
+                        token,
+                    )
+                except Exception:
+                    pass
 
     async def create_pending_entry(
         self,
@@ -44,11 +75,19 @@ class EntryApprovalService:
         analysis: list[str] | None = None,
         chart: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
+        if mode == "paper":
+            require_paper_new_exposure(symbol)
+        else:
+            require_entry_mode(mode)
         dedupe_key = f"approval:entry:dedupe:{market}:{symbol}:{side}:{mode}"
-        if await self._redis.exists(dedupe_key):
+        approval_id = str(uuid4())
+        # SET NX é atômico: dois scanners não podem criar a mesma entrada.
+        claimed = await self._redis.set(
+            dedupe_key, approval_id, ex=max(120, ttl_seconds), nx=True
+        )
+        if not claimed:
             return None
 
-        approval_id = str(uuid4())
         now = datetime.now(timezone.utc)
         payload = {
             "id": approval_id,
@@ -84,7 +123,6 @@ class EntryApprovalService:
                 ttl_seconds,
                 json.dumps(chart, ensure_ascii=True),
             )
-        await self._redis.setex(dedupe_key, max(120, ttl_seconds // 2), approval_id)
         return payload
 
     async def get_entry_chart(self, approval_id: str) -> dict[str, Any] | None:
@@ -97,19 +135,22 @@ class EntryApprovalService:
             return None
 
     async def set_entry_quantity(self, approval_id: str, quantity: Decimal) -> dict[str, Any] | None:
-        key = self._entry_key(approval_id)
-        ttl = await self._redis.ttl(key)
-        if ttl is None or ttl <= 0:
-            return None
+        async with self._lock(approval_id) as locked:
+            if not locked:
+                return None
+            key = self._entry_key(approval_id)
+            ttl = await self._redis.ttl(key)
+            if ttl is None or ttl <= 0:
+                return None
 
-        data = await self.get_entry(approval_id)
-        if not data:
-            return None
+            data = await self.get_entry(approval_id)
+            if not data or data.get("status") != "pending":
+                return None
 
-        data["quantity"] = str(quantity)
-        data["updated_at"] = datetime.now(timezone.utc).isoformat()
-        await self._redis.setex(key, ttl, json.dumps(data, ensure_ascii=True))
-        return data
+            data["quantity"] = str(quantity)
+            data["updated_at"] = datetime.now(timezone.utc).isoformat()
+            await self._redis.setex(key, ttl, json.dumps(data, ensure_ascii=True))
+            return data
 
     async def list_entries(self, status: str | None = None) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
@@ -139,22 +180,42 @@ class EntryApprovalService:
         except json.JSONDecodeError:
             return None
 
-    async def update_entry_status(self, approval_id: str, new_status: str) -> dict[str, Any] | None:
-        key = self._entry_key(approval_id)
-        ttl = await self._redis.ttl(key)
-        if ttl is None or ttl <= 0:
-            return None
+    async def update_entry_status(
+        self,
+        approval_id: str,
+        new_status: str,
+        *,
+        expected_status: str | None = None,
+    ) -> dict[str, Any] | None:
+        async with self._lock(approval_id) as locked:
+            if not locked:
+                return None
+            key = self._entry_key(approval_id)
+            ttl = await self._redis.ttl(key)
+            if ttl is None or ttl <= 0:
+                return None
 
-        data = await self.get_entry(approval_id)
-        if not data:
-            return None
+            data = await self.get_entry(approval_id)
+            if not data:
+                return None
+            current = data.get("status")
+            if expected_status is not None and current != expected_status:
+                # Outro worker (ou o usuário) já mudou o estado: não sobrescrever.
+                return None
 
-        if new_status in {"approved", "executing"}:
-            require_entry_mode(data.get("mode"))
-        data["status"] = new_status
-        data["updated_at"] = datetime.now(timezone.utc).isoformat()
-        await self._redis.setex(key, ttl, json.dumps(data, ensure_ascii=True))
-        return data
+            # Segurança antes de qualquer transição: modo real continua bloqueado.
+            if new_status in {"approved", "executing"}:
+                if data.get("mode") == "paper":
+                    require_paper_new_exposure(str(data.get("symbol") or ""))
+                else:
+                    require_entry_mode(data.get("mode"))
+            allowed = self._ALLOWED_TRANSITIONS.get(current or "")
+            if allowed is not None and new_status not in allowed:
+                return None
+            data["status"] = new_status
+            data["updated_at"] = datetime.now(timezone.utc).isoformat()
+            await self._redis.setex(key, ttl, json.dumps(data, ensure_ascii=True))
+            return data
 
     async def pop_approved_entries(self) -> list[dict[str, Any]]:
         approved = await self.list_entries(status="approved")
@@ -164,7 +225,10 @@ class EntryApprovalService:
             if not item_id:
                 continue
             try:
-                updated = await self.update_entry_status(item_id, "executing")
+                # Claim atômico: só um worker consegue levar "approved" -> "executing".
+                updated = await self.update_entry_status(
+                    item_id, "executing", expected_status="approved"
+                )
             except ExposureBlocked as exc:
                 await self.mark_entry_failed(item_id, str(exc))
                 continue
@@ -173,7 +237,9 @@ class EntryApprovalService:
         return result
 
     async def mark_entry_executed(self, approval_id: str) -> dict[str, Any] | None:
-        return await self.update_entry_status(approval_id, "executed")
+        return await self.update_entry_status(
+            approval_id, "executed", expected_status="executing"
+        )
 
     async def mark_entry_failed(self, approval_id: str, reason: str) -> dict[str, Any] | None:
         data = await self.update_entry_status(approval_id, "failed")

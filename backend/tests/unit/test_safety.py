@@ -125,6 +125,42 @@ async def test_approval_service_blocks_live_before_status_write():
     svc._redis.setex.assert_not_called()
 
 
+async def test_create_pending_entry_claims_dedupe_atomically():
+    from trading.approval_service import EntryApprovalService
+
+    svc = object.__new__(EntryApprovalService)
+    svc._redis = AsyncMock()
+    svc._redis.set.return_value = None  # NX perdeu a corrida
+
+    result = await svc.create_pending_entry(
+        market="FOREX", symbol="EURUSD", side="buy", mode="paper",
+        entry_price=Decimal("1.1"), stop_loss=Decimal("1.09"),
+        take_profit=Decimal("1.12"), quantity=Decimal("0.1"),
+        criteria={}, details={}, ttl_seconds=1800,
+    )
+
+    assert result is None
+    svc._redis.setex.assert_not_called()
+
+
+async def test_update_entry_status_rejects_stale_expected_status():
+    from trading.approval_service import EntryApprovalService
+
+    svc = object.__new__(EntryApprovalService)
+    svc._redis = AsyncMock()
+    svc._redis.ttl.return_value = 60
+    svc.get_entry = AsyncMock(return_value={
+        "status": "executed", "mode": "paper", "symbol": "EURUSD",
+    })
+
+    result = await svc.update_entry_status(
+        "id", "approved", expected_status="pending"
+    )
+
+    assert result is None
+    svc._redis.setex.assert_not_called()
+
+
 async def test_manual_approval_returns_conflict(monkeypatch):
     from fastapi import HTTPException
     from api.routes import approvals
@@ -187,7 +223,8 @@ async def test_monitor_runs_without_active_scanner_and_does_not_close_real(monke
     from notifications.telegram import notifier
     from trading.connectors import factory
     trades = [SimpleNamespace(id=i, mode=mode, market="FOREX", symbol="TEST", side="buy",
-                              entry_price=Decimal("100"), stop_loss=Decimal("95"))
+                              entry_price=Decimal("100"), stop_loss=Decimal("95"),
+                              take_profit=None, position_id=f"pos-{i}")
               for i, mode in [(1, "live"), (2, "paper")]]
     db = AsyncMock()
     result = MagicMock()
@@ -201,7 +238,15 @@ async def test_monitor_runs_without_active_scanner_and_does_not_close_real(monke
     cache = AsyncMock()
     cache.get.return_value = None
     monkeypatch.setattr(redis, "from_url", lambda *a, **kw: cache)
-    monkeypatch.setattr(trading_tasks, "_load_ohlcv", lambda *a: pd.DataFrame({"close": [100] * 80}))
+    monkeypatch.setattr(
+        trading_tasks,
+        "_load_ohlcv",
+        lambda *a: pd.DataFrame({
+            "open": [100] * 80, "high": [100] * 80, "low": [100] * 80,
+            "close": [100] * 80,
+            "timestamp": pd.date_range("2026-01-01", periods=80, freq="h", tz="UTC"),
+        }),
+    )
     monkeypatch.setattr(didi_strategy, "evaluate_safe_break", lambda **kw: SimpleNamespace(should_move=False))
     monkeypatch.setattr(didi_strategy, "evaluate_exit", lambda *a: SimpleNamespace(should_exit=True, criteria={}, details={}))
     monkeypatch.setattr(notifier, "send_message", AsyncMock())

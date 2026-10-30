@@ -20,11 +20,13 @@ import logging
 import os
 import threading
 import time
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 from os.path import exists, join
 from traceback import print_exc
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from trading.connectors.simulated import SimulatedConnector
 from trading.contracts import Capability, CapabilityUnavailable
@@ -51,6 +53,15 @@ _TF_MAP: dict[str, str] = {
 _NUM_COMMAND_FILES = 50
 
 
+def parse_server_timestamp(value: str, server_timezone: str = "Europe/Athens") -> int:
+    """Parse DWX wall-clock timestamps in the broker zone; numeric epochs are UTC."""
+    try:
+        return int(float(value))
+    except ValueError:
+        local_time = datetime.strptime(value, "%Y.%m.%d %H:%M")
+        return int(local_time.replace(tzinfo=ZoneInfo(server_timezone)).timestamp())
+
+
 class DWXConnector(SimulatedConnector):
     """
     Connector para MetaTrader 5 via DWX Connect (comunicação por arquivos).
@@ -67,7 +78,7 @@ class DWXConnector(SimulatedConnector):
         mt5_files_dir: str,
         sleep_delay: float = 0.005,
         max_retry_s: int = 10,
-        *, context=None, transport=None,
+        *, context=None, transport=None, server_timezone: str = "Europe/Athens",
     ) -> None:
         self._bind(context, transport)
         self.prices = transport.prices if transport is not None else {}
@@ -79,6 +90,7 @@ class DWXConnector(SimulatedConnector):
         )
         self._sleep = sleep_delay
         self._max_retry = max_retry_s
+        self._server_timezone = server_timezone
         # Usa offset baseado em timestamp para evitar reutilizar IDs já
         # processados pelo EA em sessões anteriores (EA ignora ID <= lastCommandId).
         self._cmd_id = int(time.time()) % 99_000
@@ -188,19 +200,9 @@ class DWXConnector(SimulatedConnector):
 
         raw = self.historic_data.get(key, {})
 
-        def _parse_ts(ts_str: str) -> int:
-            """Converte timestamp MT5 (float Unix ou string 'YYYY.MM.DD HH:MM') para int Unix."""
-            try:
-                return int(float(ts_str))
-            except ValueError:
-                # Formato MT5: '2026.03.23 01:00'
-                from datetime import datetime, timezone
-                dt = datetime.strptime(ts_str, "%Y.%m.%d %H:%M").replace(tzinfo=timezone.utc)
-                return int(dt.timestamp())
-
         candles: list[OHLCVCandle] = [
             OHLCVCandle(
-                timestamp=_parse_ts(ts_str),
+                timestamp=parse_server_timestamp(ts_str, self._server_timezone),
                 open=Decimal(str(row["open"])),
                 high=Decimal(str(row["high"])),
                 low=Decimal(str(row["low"])),

@@ -84,8 +84,8 @@ async def test_open_position_invalid_sl(mock_connector, mock_db):
 
 
 @pytest.mark.asyncio
-async def test_oco_fallback_to_stop_market(mock_connector, mock_db):
-    """Proteção rejeitada mantém a exposição aberta para reconciliação."""
+async def test_oco_fallback_closes_position_when_protection_rejected(mock_connector, mock_db):
+    """Proteção rejeitada: fecha a mercado em vez de deixar exposição nua."""
     mock_connector.modify_position_protection = AsyncMock(return_value=ExecutionResult(
         "protect", ResultState.REJECTED, reason="simulated rejection"))
 
@@ -95,7 +95,7 @@ async def test_oco_fallback_to_stop_market(mock_connector, mock_db):
     mock_db.refresh.side_effect = fake_refresh
 
     executor = OrderExecutor(mock_connector, mock_db)
-    with pytest.raises(OrderExecutionError, match="Protection not confirmed"):
+    with pytest.raises(OrderExecutionError, match="closed to avoid unhedged risk"):
         await executor.open_position(
             symbol="BTC/USDT",
             side=OrderSide.BUY,
@@ -106,8 +106,40 @@ async def test_oco_fallback_to_stop_market(mock_connector, mock_db):
         )
 
     persisted_trade = next(call.args[0] for call in mock_db.add.call_args_list
-                           if getattr(call.args[0], "status", None) == "open")
-    assert persisted_trade.status == "open"
+                           if getattr(call.args[0], "status", None) == "closed")
+    assert persisted_trade.close_reason == "PROTECTION_FAILED"
+    assert persisted_trade.position_id not in mock_connector._transport.positions
+
+
+@pytest.mark.asyncio
+async def test_protection_failure_without_close_keeps_trade_marked_unprotected(
+        mock_connector, mock_db):
+    """Se nem o fechamento confirmar, o trade fica aberto e sinalizado."""
+    mock_connector.modify_position_protection = AsyncMock(return_value=ExecutionResult(
+        "protect", ResultState.REJECTED, reason="simulated rejection"))
+    mock_connector.reduce_position = AsyncMock(return_value=ExecutionResult(
+        "close", ResultState.REJECTED, reason="close rejected"))
+
+    async def fake_refresh(obj):
+        obj.__dict__["id"] = 3
+
+    mock_db.refresh.side_effect = fake_refresh
+
+    executor = OrderExecutor(mock_connector, mock_db)
+    with pytest.raises(OrderExecutionError, match="UNPROTECTED"):
+        await executor.open_position(
+            symbol="BTC/USDT",
+            side=OrderSide.BUY,
+            quantity=Decimal("0.01"),
+            entry_price=Decimal("50000"),
+            stop_loss=Decimal("48000"),
+            take_profit=Decimal("55000"),
+        )
+
+    event_types = [
+        getattr(call.args[0], "event_type", None) for call in mock_db.add.call_args_list
+    ]
+    assert "UNPROTECTED_POSITION" in event_types
 
 
 @pytest.mark.asyncio

@@ -2,11 +2,22 @@ from decimal import Decimal
 from unittest.mock import AsyncMock
 
 from trading.connectors.dwx import DWXConnector
+from trading.connectors.dwx import parse_server_timestamp
 from trading.connectors.fake_transports import TemporaryDWXTransport
 from trading.connectors.types import OrderSide, OrderType
 from trading.contracts import (Capability, ExecutionContext, ExecutionMode,
                                Instrument, OrderIntent, ResultState)
 from trading.safety import AccountNature
+
+
+def test_dwx_server_timestamps_convert_eet_and_eest_to_utc():
+    from datetime import datetime, timezone
+
+    summer = parse_server_timestamp("2026.07.30 19:00")
+    winter = parse_server_timestamp("2026.10.30 19:00")
+
+    assert datetime.fromtimestamp(summer, timezone.utc).isoformat() == "2026-07-30T16:00:00+00:00"
+    assert datetime.fromtimestamp(winter, timezone.utc).isoformat() == "2026-10-30T17:00:00+00:00"
 
 
 def _context():

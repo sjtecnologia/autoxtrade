@@ -42,6 +42,45 @@ Etapa 06 implementada e validada no checkout macOS com `backend/.venv/bin/python
 - Validação final: suíte completa `129 passed / 0 xfailed`; `test_safety.py` `31 passed`; regressões `6 passed`; estratégia DiDi `3 passed`.
 - Pendências tratadas nas etapas 02-06: F02, F03, F04, F05, F09, F11 e F12.
 
+## Atualização integração DWX/MT5 — 2026-09-25
+
+- Probe read-only adaptado ao share real `/Volumes/MT5Files/DWX` (`smb://192.168.0.52/MT5Files`): lista `DWX_*`, deriva o padrão sem sufixo, mapeia `DWX_Orders.txt` e `DWX_Market_Data.txt`, e falha claramente quando nenhum `DWX_*` existe.
+- `DWX_Market_Data.txt` vazio é registrado como market data ausente/não fresco no `DataQualityReport`; nenhum conteúdo sintético é criado.
+- `MarketWatchSymbols.txt` é usado somente como hint. `DWX_Commands_*`, `DWX_Positions_*` e `DWX_Open_Orders_*` ausentes são registrados; a reconciliação lê apenas as ordens disponíveis.
+- O probe registra a divergência de nomenclatura servidor/conector e recomenda parametrização/alinhamento futuro. `_TESTE_AUTOXTRADE.txt` é ignorado.
+- Nenhum arquivo do share foi escrito e nenhum comando DWX foi criado. Suíte após adaptação: `132 passed / 0 xfailed`.
+
+## Atualização etapa 07 — 2026-09-25
+
+- Criados `backend/integration/probe.py` e `backend/integration/monitor_dry_run.py`, fora da suíte gated, para integração manual controlada.
+- Probe real executado com `AUTOXTRADE_MT5_FILES_DIR=/Volumes/MT5Files/DWX`: leu `DWX_Orders.txt` (`orders: {}`), classificou `DWX_Market_Data.txt` como ausente/não fresco, validou 25 símbolos do hint e registrou as fontes ausentes.
+- Reconciliação real e monitor dry-run executados por 5 iterações: somente consulta/sinalização, 0 divergências no snapshot atual, zero comandos e zero mutações.
+- Guardas de execução falham se `place_order`, `_write_command`, cancelamento, proteção ou redução forem acionados; snapshot do diretório confirmou que nenhum arquivo DWX foi criado ou alterado.
+- Etapa 07 concluída sem pendências de correção documentadas. Próximo marco: piloto paper-trading em modo simulado, ainda sem execução real.
+
+## Atualização etapa 08 — 2026-09-25
+
+- Livro paper criado em `backend/paper/ledger.json`, escrito somente pelo modo papel e com ordens rotuladas `status=simulated` e fonte de preço explícita.
+- Piloto executado por 5 iterações contra `/Volumes/MT5Files/DWX`. Como `DWX_Market_Data.txt` continua vazio, a decisão foi usar `synthetic_seed_20250925`; o piloto gerou zero sinais e zero ordens no snapshot real, sem fingir dados do MT5.
+- A reconciliação e o monitor expõem `positions availability=missing` quando `DWX_Positions_*` não existe; a ausência nunca é convertida silenciosamente em zero posições.
+- Guards do piloto falham diante de qualquer `place_order`, `_write_command`, cancelamento, proteção ou redução; a execução real permaneceu bloqueada pelo gate.
+- Suíte final: `131 passed / 0 xfailed`; `test_safety.py`: `31 passed`. Etapa 08 concluída. Pendência de infraestrutura: alimentar `DWX_Market_Data.txt` real antes de qualquer evolução rumo à execução, que continua bloqueada.
+
+## Atualização etapa 09 — 2026-09-25
+
+- Feed real operacional: o piloto passou a usar `--mode real` por padrão, consumindo tick/barra M5 e histórico reais de `EURUSD.pr`.
+- Refresh periódico implementado com debounce: nenhum novo comando é enviado quando tick e barra permanecem frescos; canal pendente nunca é sobrescrito.
+- Piloto real executado por 5 iterações com `price_source=mt5_real`, zero sinais e zero ordens simuladas no snapshot observado; reconciliação registrou `positions availability=missing` explicitamente.
+- Suíte: `137 passed / 0 xfailed`; `test_safety.py`: `31 passed`. Nenhuma pendência de infraestrutura de market data permanece.
+- Próximo marco continua bloqueado pelo gate: qualquer execução real depende de decisão explícita futura do usuário; esta etapa não enviou ordens.
+
+## Atualização etapa 08b — 2026-09-25
+
+- Investigação inicial foi resolvida pelo código confirmado do EA: canal `DWX_Commands_0.txt`, payload `<:ID|COMANDO|CONTEUDO:>` sem newline e IDs crescentes.
+- Foram consumidos somente três comandos de dados: `SUBSCRIBE_SYMBOLS` (ID 10001), `SUBSCRIBE_SYMBOLS_BAR_DATA` (ID 10002) e `GET_HISTORIC_DATA` (ID 10003), todos para `EURUSD.pr`/`M5` conforme aplicável.
+- `DWX_Market_Data.txt`, `DWX_Bar_Data.txt` e `DWX_Historic_Data.txt` foram populados; o histórico retornou 208 candles cronológicos e passou validação de símbolo/frescor.
+- Estado: **RESOLVIDO** para o canal e alimentação inicial de market data. O wrapper permanece whitelist fail-closed; comandos de ordem continuam bloqueados e o gate real não foi alterado.
+
 # Correção AutoXTrade — etapa 01
 
 Data: 2026-09-22. **Etapa 01 implementada; suíte completa não aprovada.**

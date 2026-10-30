@@ -53,6 +53,8 @@ def evaluate_entry(
     rr_target: Decimal = Decimal("2.0"),
     safe_rr: Decimal = Decimal("1.0"),
     chart_candles: int = 180,
+    require_momentum_confirmation: bool = False,
+    _prepared: bool = False,
 ) -> EntryEvaluation | None:
     """Retorna sinal de entrada DiDi quando os 3 pilares estão ativos.
 
@@ -61,7 +63,7 @@ def evaluate_entry(
     - DMI: tendencia existente e acelerante (ADX crescente).
     - Bollinger: abertura de bandas ("boca de jacare").
     """
-    ind = _build_indicator_frame(df)
+    ind = df if _prepared else _build_indicator_frame(df)
     if ind is None or len(ind) < 8:
         return None
 
@@ -74,15 +76,26 @@ def evaluate_entry(
     trend_buy = bool(last["dmi_buy"]) and float(last["ADX_14"]) >= adx_min
     trend_sell = bool(last["dmi_sell"]) and float(last["ADX_14"]) >= adx_min
 
+    # Momentum confirmation can be enabled for experiments; it remains optional
+    # until walk-forward data proves that it improves out-of-sample results.
+    momentum_buy = (
+        float(last["STOCHk_14_3_3"]) > float(last["STOCHd_14_3_3"])
+        and float(last["TRIX_9_4"]) > float(last["TRIXs_9_4"])
+    )
+    momentum_sell = (
+        float(last["STOCHk_14_3_3"]) < float(last["STOCHd_14_3_3"])
+        and float(last["TRIX_9_4"]) < float(last["TRIXs_9_4"])
+    )
+
     # ADX acelerando no candle atual
     adx_accelerating = float(last["ADX_14"]) > float(prev["ADX_14"])
 
     bb_open = float(last["bb_width"]) > float(last["bb_width_ma"]) * bollinger_open_ratio and float(last["bb_width"]) > float(prev["bb_width"])
 
     direction: TradeSide | None = None
-    if didi_buy and trend_buy and adx_accelerating and bb_open:
+    if didi_buy and trend_buy and adx_accelerating and bb_open and (momentum_buy or not require_momentum_confirmation):
         direction = "buy"
-    elif didi_sell and trend_sell and adx_accelerating and bb_open:
+    elif didi_sell and trend_sell and adx_accelerating and bb_open and (momentum_sell or not require_momentum_confirmation):
         direction = "sell"
 
     if direction is None:
@@ -105,6 +118,7 @@ def evaluate_entry(
         "dmi_trend": True,
         "adx_accelerating": adx_accelerating,
         "bollinger_open": bb_open,
+        "momentum_confirmed": momentum_buy if direction == "buy" else momentum_sell,
     }
     details = {
         "didi_reason": str(last["didi_reason"]),
@@ -229,9 +243,9 @@ def _row_epoch(row) -> int | None:
         return None
 
 
-def evaluate_exit(df: pd.DataFrame, side: TradeSide) -> ExitEvaluation:
+def evaluate_exit(df: pd.DataFrame, side: TradeSide, *, _prepared: bool = False) -> ExitEvaluation:
     """Aplica regra de saida ensinada pelo DiDi (4 sinais)."""
-    ind = _build_indicator_frame(df)
+    ind = df if _prepared else _build_indicator_frame(df)
     if ind is None or len(ind) < 10:
         return ExitEvaluation(False, {}, {"error": "candles insuficientes"})
 

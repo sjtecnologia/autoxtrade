@@ -50,13 +50,50 @@ async def get_position_sizing(
     import redis.asyncio as aioredis
 
     from config import settings
+    from db.models import BotConfig
+    from trading.contracts import context_from_dict
+
+    # Resolve o instrumento vinculado para não dimensionar FX/B3 como spot.
+    contract_size = Decimal("1")
+    quote_asset = "USDT"
+    matched_market: str | None = None
+    matched_mode: str | None = None
+    configs = (await db.execute(select(BotConfig))).scalars().all()
+    for config in configs:
+        bindings = getattr(config, "execution_context", None) or {}
+        if not isinstance(bindings, dict):
+            continue
+        raw = bindings.get(symbol)
+        if raw is None and bindings.get("instrument", {}).get("symbol") == symbol:
+            raw = bindings
+        if raw is None:
+            continue
+        try:
+            context = context_from_dict(raw)
+        except Exception:
+            continue
+        contract_size = context.instrument.contract_size or Decimal("1")
+        quote_asset = context.instrument.quote_currency or quote_asset
+        matched_market = config.market
+        matched_mode = config.mode
+        break
 
     # Resolve preço de entrada
     if entry_price is None:
+        from trading.market_feed import MarketDataUnavailable, latest_mark_price
+
         r = aioredis.from_url(settings.redis_url, decode_responses=True)
         try:
-            cached = await r.get(f"price:{symbol}")
-            entry_price = Decimal(cached) if cached else None
+            if matched_market:
+                try:
+                    entry_price = await latest_mark_price(
+                        r, symbol, matched_market, settings
+                    )
+                except MarketDataUnavailable:
+                    entry_price = None
+            else:
+                cached = await r.get(f"price:{symbol}")
+                entry_price = Decimal(cached) if cached else None
         finally:
             await r.aclose()
 
@@ -69,10 +106,17 @@ async def get_position_sizing(
     await sizer.startup()
     try:
         step_size = await sizer.get_step_size(symbol)
-        capital = await sizer.get_available_capital("USDT")
+        if matched_mode == "paper":
+            from trading.equity import paper_available_capital
+
+            capital = await paper_available_capital(db, matched_market or market)
+        else:
+            capital = await sizer.get_available_capital(quote_asset)
         if capital <= Decimal("0"):
-            # Demo: usa 10.000 USDT quando não há saldo (sem connector)
-            capital = Decimal("10000")
+            raise HTTPException(
+                status_code=503,
+                detail=f"Capital indisponível para {quote_asset}; sizing bloqueado.",
+            )
 
         try:
             result = sizer.calculate(
@@ -81,6 +125,7 @@ async def get_position_sizing(
                 entry_price=entry_price,
                 stop_loss_price=stop_loss_price,
                 step_size=step_size,
+                contract_size=contract_size,
             )
         except PositionSizingError as exc:
             raise HTTPException(status_code=422, detail=str(exc))

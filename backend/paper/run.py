@@ -11,6 +11,7 @@ from decimal import Decimal
 
 import pandas as pd
 
+from config import settings
 from integration.market_data_refresh import MarketDataRefresh
 from ml.data_collector import DataCollector
 from integration.probe import (
@@ -24,6 +25,7 @@ from paper.ledger import PaperLedger
 from trading.didi_strategy import evaluate_entry
 from trading.reconciliation import ReconciliationReport, reconcile_positions
 from trading.dwx_probe import probe_dwx_directory
+from trading.connectors.dwx import parse_server_timestamp
 
 DEFAULT_LEDGER = Path(__file__).resolve().parent / "ledger.json"
 DEFAULT_REPORT = Path(__file__).resolve().parents[2] / "docs" / "correcao" / "piloto-paper.md"
@@ -64,7 +66,9 @@ def _historic_candles(directory: Path, symbol: str, timeframe: str) -> pd.DataFr
     data = []
     for timestamp, row in rows.items():
         data.append({
-            "timestamp": datetime.strptime(timestamp, "%Y.%m.%d %H:%M").replace(tzinfo=timezone.utc),
+            "timestamp": datetime.fromtimestamp(
+                parse_server_timestamp(timestamp, settings.mt5_server_timezone), tz=timezone.utc
+            ),
             "open": float(row["open"]),
             "high": float(row["high"]),
             "low": float(row["low"]),

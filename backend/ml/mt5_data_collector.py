@@ -91,9 +91,13 @@ class MT5DataCollector:
     ) -> pd.DataFrame:
         self.validate_symbol(symbol, market)
         from trading.connectors.dwx import DWXConnector
+        from config import settings
 
         tf_dwx = TIMEFRAME_MAP.get(timeframe, timeframe.upper())
-        connector = DWXConnector(mt5_files_dir=self._mt5_files_dir)
+        connector = DWXConnector(
+            mt5_files_dir=self._mt5_files_dir,
+            server_timezone=settings.mt5_server_timezone,
+        )
 
         try:
             await connector.connect()

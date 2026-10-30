@@ -32,3 +32,78 @@ backend/tests/unit/test_regressions_pending.py: SHA256 b9e1307063f30a4233e8ccd95
 docs/correcao/ESTADO.md: SHA256 8469135df0e7f0fdd45905c0258ee4588992ed2a6aa37fc1098cb902c0a0007c
 docs/correcao/testes-etapa06.txt: SHA256 1bb42eddb191b4a229626e9c67a87ac549290955039376c1c2694547269c96a5
 docs/correcao/etapa06.diff: SHA256 a7f2ef49884361d356ab86e425a83dfdaa40d228bf2667ea90922ccaea3d7d21
+
+Arquivos alterados nesta rodada - SHA256
+Data: 2026-09-25
+Escopo: integração read-only com layout real DWX/MT5
+
+backend/ml/data_collector.py: SHA256 144b399be3ee49561c9d0a80e801a0fd4db7a7f40a731f8d57c9fa94a890fe63
+backend/trading/connectors/dwx.py: SHA256 7b4379d4981bc83ca9abd24a233e0f68e76d513a10f259e6f06dc4f6921c26d0
+backend/trading/dwx_probe.py: SHA256 99afa1c2e0599279f46b64183da520d8de5bd78dc7ef8c77dc9c7492071be83e
+backend/tests/unit/test_dwx_probe.py: SHA256 7b66a009f8bfe5bdae124c3406bcecf5f4431a9cc314c8b1a108b739d942d1fb
+docs/correcao/ESTADO.md: SHA256 0cbf402648b8fada1b0e0531102d93a6530c37a20d45e69c74ca5f36c9a8ed63
+docs/correcao/testes-dwx-integracao.txt: SHA256 51373a4f59ad2bcf1239e174dc794183241aaaf1c303e9fb40be3b7396b246d6
+
+Arquivos alterados nesta rodada - SHA256
+Data: 2026-09-25
+Etapa: 07 - Integração MT5 read-only e monitor dry-run
+
+backend/integration/__init__.py: SHA256 8ef86a219a481ff445139c74f25e747a15c477912c2681cffa04fdcab1806944
+backend/integration/probe.py: SHA256 c63a00aaca831902b97e37135e2221fcc4a318a385c321811a88a79274d9a9b3
+backend/integration/monitor_dry_run.py: SHA256 7d234568e69affda7ac63365f98a99c300190e4477b13dd9c3b1f370c2d2dc3b
+backend/trading/connectors/dwx.py: SHA256 bff88e490b7d153741c036a9d07bfdc5cdc74fd66c6432ccb441e032198472b2
+backend/trading/dwx_probe.py: SHA256 99afa1c2e0599279f46b64183da520d8de5bd78dc7ef8c77dc9c7492071be83e
+docs/correcao/ESTADO.md: SHA256 856fc86f2a744916e3170e7e4dad39e2bc459da7386a3b935959b19da53c29f0
+docs/correcao/etapa07.diff: SHA256 ff73a27064cd064088dd4d6d6d7db67e3c1deed2f917ac359e0f7b92f8a58834
+docs/correcao/integracao-mt5.md: SHA256 54969290c74c6aa002f9c220ab8fb3c94879bce1d72f136ddc78b30adb5fc5bd
+
+Arquivos alterados nesta rodada - SHA256
+Data: 2026-09-25
+Etapa: 08 - Piloto paper-trading simulado
+
+backend/paper/__init__.py: SHA256 ffcc2b0813c96436cf56566895f87721a4240a8f37f3b3b4c1b82323f88e77df
+backend/paper/ledger.py: SHA256 4025fde60fda5c5081e010a94159b74aad0d41aa53028d012222cc577e35eeb8
+backend/paper/run.py: SHA256 088344d0c77fcf6f2e19bcc54a588f01b1bb196bb3c152c70f00e384dafac97e
+backend/trading/reconciliation.py: SHA256 c2812c0062db73e8af26ba901efbf75f3da2760bf9731b6a2c85743b0fb2da9f
+backend/trading/connectors/dwx.py: SHA256 7247d6fb3172e4bc20e96a5a2d10b7d26c3b1c80b96db25e121d01eeafdfe743
+backend/trading/order_monitor.py: SHA256 3eb10e5fbe5c05e0e40a070134c29e130d8dc560d0a67556323cfa68105b7a10
+backend/tests/unit/test_paper_run.py: SHA256 acd4a4da592dd707537199b9b6fc223c1aaecb0de8320939a03266cb5bbd9743
+backend/tests/unit/test_reconciliation.py: SHA256 158fa7c35f7d6011221d10033b341a6a53e7a278fc0bbd93a814b71a54dd891e
+backend/integration/probe.py: SHA256 c63a00aaca831902b97e37135e2221fcc4a318a385c321811a88a79274d9a9b3
+docs/correcao/ESTADO.md: SHA256 c5f791b6487bc3f2512485538e739308d7e0b1429c2ea83e35916b96d4b8cf79
+docs/correcao/testes-etapa08.txt: SHA256 f83b67b1d60b75bc443c863d863e038fb8341642af56b3a9ca68960d7bc31065
+docs/correcao/etapa08.diff: SHA256 082c88a64e33df85106041cfd2fa472dee5bab7973d3eddf169502fdbd88ee08
+docs/correcao/piloto-paper.md: SHA256 7e58cf111048304fbed1cc0c64e7ac11381fa5fa5f9bc3503110b5eabca37288
+backend/paper/ledger.json: SHA256 37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570
+
+Arquivos alterados nesta rodada - SHA256
+Data: 2026-09-25
+Etapa: 08b - Investigação controlada do canal de market data
+
+docs/correcao/resolucao-market-data.md: SHA256 f8c42b5ef869869210c0b190636203ff25cfb9c6ad53b0fa62069f63c6186e30
+docs/correcao/etapa08b.diff: SHA256 255323d7af45533907fdd825c972b48e522467198c392a1db79d65101202f5b3
+docs/correcao/ESTADO.md: SHA256 6f1ca2d28d063daa89aa0bed3ee45e3eaa4cf56db2adfa3cff35b8ca75c95c9b
+
+Arquivos alterados nesta rodada - SHA256
+Data: 2026-09-25
+Etapa: 08b retomada - primeiro pedido confirmado de market data
+
+backend/integration/market_data_request.py: SHA256 cc8cba54ce52b25ee9bf3e7309d49d9e0f83796c3d13c3542661aba87232c34a
+backend/tests/unit/test_market_data_request.py: SHA256 348ad89b3c1f339d5ef51a7ccb1c124c4b6f1b218d51605be35480e7e4f943a3
+docs/correcao/resolucao-market-data.md: SHA256 fe3ad2a4764d3ae19f7c8c56bd1ea9aba1c8434f6fc2e666f8fe439a22f0b4fb
+docs/correcao/etapa08b.diff: SHA256 da31fc7620a883837745937eb2d55c937557df62010de513e02d41083b6d9434
+docs/correcao/ESTADO.md: SHA256 9cee94520d2d56dbe75fae6dc0e710a169406113dc7600abcebbcf891a996e3a
+
+Arquivos alterados nesta rodada - SHA256
+Data: 2026-09-25
+Etapa: 09 - Piloto paper com feed real e refresh periódico
+
+backend/integration/market_data_refresh.py: SHA256 b6b47d45c35353d043e827ca22e101e3a3c95b2cff03f20a476a68384e9cd2e5
+backend/paper/run.py: SHA256 d4e8b8a583d7c2a72ca2b8c51034b726694fba0e175c8d086ba045941513db3d
+backend/tests/unit/test_market_data_refresh.py: SHA256 ff6556dfc5f678f40d9aa3cda4cee21e57e6ee58de2687debeb3c6e95e66074d
+backend/tests/unit/test_paper_run.py: SHA256 f6306f257b8637addd5a5ba5b7fc4680092bd0f0864597f81b3a84b79a9d1442
+docs/correcao/ESTADO.md: SHA256 c7f9290c700b21e623bed2b559cfe66e36c03c0651105336303be1714990524e
+docs/correcao/testes-etapa09.txt: SHA256 e9495bedce1f53c200034d78f07c49d32a36521c2d0204e6cdf97ffa60b9090f
+docs/correcao/etapa09.diff: SHA256 b36738478683ef7d4f0473bd09e0fb05d22924c1c7ca0c6337d379b14a7aae50
+docs/correcao/piloto-paper.md: SHA256 9e17348360c39045997a8ac5d52c6d42fd2717e28f603279943bc15abbd8a1eb
+backend/paper/ledger.json: SHA256 37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570

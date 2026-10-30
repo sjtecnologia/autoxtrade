@@ -1,0 +1,32 @@
+Correção AutoXTrade - Etapa 09: piloto paper com feed real
+Data: 2026-09-25
+Runtime: backend/.venv/bin/python (Python 3.12)
+
+Piloto real
+$ AUTOXTRADE_MT5_FILES_DIR=/Volumes/MT5Files/DWX .venv/bin/python -m paper.run --iterations 5 --mode real --datadir /Volumes/MT5Files/DWX
+- modo de dados: real_mt5
+- fonte de preço: mt5_real
+- símbolo: EURUSD.pr
+- cinco iterações consumiram tick e candle M5 reais
+- sinais: 0
+- ordens simuladas: 0 no snapshot observado
+- posições: availability=missing (DWX_Positions_* ausente, nunca interpretado silenciosamente como zero)
+- divergências/órfãos: 0
+- refresh: debounce evitou novos comandos porque tick e barra estavam frescos
+- ZERO comandos de ordem, ZERO mutações e ZERO ordens reais
+
+Testes
+$ .venv/bin/python -m pytest tests/unit/test_market_data_refresh.py tests/unit/test_paper_run.py -q --tb=short
+4 passed
+
+$ .venv/bin/python -m pytest tests/ -q -rx --tb=short
+137 passed, 0 xfailed
+
+$ .venv/bin/python -m pytest tests/unit/test_safety.py -q --tb=short
+31 passed
+
+Garantias
+- O wrapper continua whitelist fail-closed.
+- Refresh só pode escrever comandos de dados e nunca sobrescreve DWX_Commands_0.txt pendente.
+- Modo real não usa synthetic; fallback sintético só permanece disponível com --mode synthetic explícito.
+- backend/trading/safety.py permaneceu intacto.

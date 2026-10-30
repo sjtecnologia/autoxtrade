@@ -281,53 +281,47 @@ class ModelTrainer:
         max_pf_dispersion = cfg["max_pf_dispersion"]
 
         skip_performance_gates = bool(cfg.get("skip_performance_gates", False))
-        if not skip_performance_gates:
-            if avg_pf < min_pf:
-                result.rejection_reason = f"Profit Factor médio {avg_pf:.4f} < {min_pf}"
-                logger.info("[trainer] Modelo rejeitado: %s", result.rejection_reason)
-                return result
+        if skip_performance_gates:
+            result.rejection_reason = "Configuração insegura: gates de performance não podem ser desativados"
+            logger.error("[trainer] Modelo rejeitado: %s", result.rejection_reason)
+            return result
 
-            if avg_wr < min_wr:
-                result.rejection_reason = f"Win Rate médio {avg_wr:.2f}% < {min_wr:.2f}%"
-                logger.info("[trainer] Modelo rejeitado: %s", result.rejection_reason)
-                return result
+        if avg_pf < min_pf:
+            result.rejection_reason = f"Profit Factor médio {avg_pf:.4f} < {min_pf}"
+            logger.info("[trainer] Modelo rejeitado: %s", result.rejection_reason)
+            return result
 
-            if total_trades < min_total_trades:
-                result.rejection_reason = f"Trades insuficientes: {total_trades} < {min_total_trades}"
-                logger.info("[trainer] Modelo rejeitado: %s", result.rejection_reason)
-                return result
+        if avg_wr < min_wr:
+            result.rejection_reason = f"Win Rate médio {avg_wr:.2f}% < {min_wr:.2f}%"
+            logger.info("[trainer] Modelo rejeitado: %s", result.rejection_reason)
+            return result
 
-            if avg_expectancy < min_expectancy:
-                result.rejection_reason = (
-                    f"Expectancy médio {avg_expectancy:.4f}% < {min_expectancy:.4f}%"
-                )
-                logger.info("[trainer] Modelo rejeitado: %s", result.rejection_reason)
-                return result
+        if total_trades < min_total_trades:
+            result.rejection_reason = f"Trades insuficientes: {total_trades} < {min_total_trades}"
+            logger.info("[trainer] Modelo rejeitado: %s", result.rejection_reason)
+            return result
 
-            if avg_max_dd > max_dd:
-                result.rejection_reason = (
-                    f"Drawdown médio {avg_max_dd:.2f}% > {max_dd:.2f}%"
-                )
-                logger.info("[trainer] Modelo rejeitado: %s", result.rejection_reason)
-                return result
-
-            if pf_dispersion > max_pf_dispersion:
-                result.rejection_reason = (
-                    f"Inconsistência entre folds (dispersão PF={pf_dispersion:.2f}) > "
-                    f"{max_pf_dispersion:.2f}"
-                )
-                logger.info("[trainer] Modelo rejeitado: %s", result.rejection_reason)
-                return result
-        else:
-            logger.info(
-                "[trainer] Perfil didi: gates de performance desativados "
-                "(PF=%.4f WR=%.2f%% trades=%d EXP=%.4f%% DD=%.2f%%)",
-                avg_pf,
-                avg_wr,
-                total_trades,
-                avg_expectancy,
-                avg_max_dd,
+        if avg_expectancy < min_expectancy:
+            result.rejection_reason = (
+                f"Expectancy médio {avg_expectancy:.4f}% < {min_expectancy:.4f}%"
             )
+            logger.info("[trainer] Modelo rejeitado: %s", result.rejection_reason)
+            return result
+
+        if avg_max_dd > max_dd:
+            result.rejection_reason = (
+                f"Drawdown médio {avg_max_dd:.2f}% > {max_dd:.2f}%"
+            )
+            logger.info("[trainer] Modelo rejeitado: %s", result.rejection_reason)
+            return result
+
+        if pf_dispersion > max_pf_dispersion:
+            result.rejection_reason = (
+                f"Inconsistência entre folds (dispersão PF={pf_dispersion:.2f}) > "
+                f"{max_pf_dispersion:.2f}"
+            )
+            logger.info("[trainer] Modelo rejeitado: %s", result.rejection_reason)
+            return result
 
         # 4. Treinar modelo final + scaler
         model, scaler = self._train_final_model(X, y, fe, version)
@@ -719,12 +713,12 @@ class ModelTrainer:
                 "target_mode": "didi",
                 "threshold": threshold,
                 "forward_candles": forward_candles,
-                "min_pf": 1.08,
-                "min_wr": 40.0,
-                "min_total_trades": min_trades_by_tf.get(tf, 12),
-                "min_expectancy": -0.01,
-                "max_drawdown": 32.0,
-                "max_pf_dispersion": 1.8,
+                "min_pf": 1.30,
+                "min_wr": 48.0,
+                "min_total_trades": max(30, min_trades_by_tf.get(tf, 12)),
+                "min_expectancy": 0.01,
+                "max_drawdown": 25.0,
+                "max_pf_dispersion": 1.2,
                 "min_required_rows": 80,
                 "min_train_samples": 40,
                 "min_test_samples": 8,

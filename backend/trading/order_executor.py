@@ -7,7 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from db.models import Trade, TradeEvent
 from trading.connectors.base import BaseConnector
 from trading.connectors.types import OrderSide, OrderType
-from trading.safety import require_new_exposure, require_position_management
+from trading.safety import (
+    require_new_exposure,
+    require_paper_new_exposure,
+    require_position_management,
+)
 from trading.contracts import Capability, ExecutionContext, OrderIntent, ResultState
 from uuid import uuid4
 
@@ -51,6 +55,8 @@ class OrderExecutor:
         self._validate_stops(side, entry_price, stop_loss, take_profit)
         require_new_exposure(self._conn)
         bound = self._conn.context
+        if bound.mode.value == "paper":
+            require_paper_new_exposure(symbol)
         if context is not None and context != bound:
             raise OrderExecutionError("Request conflicts with authorized execution context")
         if symbol != bound.instrument.symbol or market is not None and market != bound.market:
@@ -70,6 +76,16 @@ class OrderExecutor:
                 or not entry_order.position_id or entry_order.average is None):
             raise OrderExecutionError(f"Entry not fully confirmed: {entry_order.state.value}; reconciliation required")
         avg_price = entry_order.average
+        execution_snapshot = bound.snapshot()
+        entry_value = avg_price * quantity
+        if bound.mode.value == "paper":
+            from paper.costs import paper_costs_for
+            costs = paper_costs_for(symbol)
+            contract_size = bound.instrument.contract_size
+            entry_offset = costs.spread_price + costs.slippage_price
+            avg_price = avg_price + entry_offset if side == OrderSide.BUY else avg_price - entry_offset
+            entry_value = avg_price * quantity * contract_size
+            execution_snapshot["paper_costs"] = costs.as_dict()
 
         # 2. Persiste trade como "open"
         trade = Trade(
@@ -83,11 +99,11 @@ class OrderExecutor:
             account_nature=bound.nature.value,
             instrument_class=bound.instrument.asset_class,
             position_id=entry_order.position_id,
-            execution_context=bound.snapshot(),
+            execution_context=execution_snapshot,
             identity_status="bound",
             entry_price=avg_price,
             quantity=quantity,
-            entry_value=(avg_price * quantity).quantize(Decimal("0.01")),
+            entry_value=entry_value.quantize(Decimal("0.01")),
             stop_loss=stop_loss,
             take_profit=take_profit,
             open_at=datetime.datetime.now(datetime.timezone.utc),
@@ -106,17 +122,97 @@ class OrderExecutor:
         await self._db.commit()
         await self._db.refresh(trade)
 
-        # 3. Envia OCO com fallback
-        protection = await self._conn.modify_position_protection(
-            entry_order.position_id, stop_loss=stop_loss, take_profit=take_profit,
-            intent_id=uuid4().hex)
-        if protection.state != ResultState.CONFIRMED:
-            raise OrderExecutionError("Protection not confirmed; position remains open for reconciliation")
+        # 3. Envia proteção. Se falhar, não deixamos exposição nua: tentamos
+        # fechar imediatamente. Sem confirmação do fechamento, o trade fica
+        # marcado para reconciliação e o erro é propagado.
+        protection = None
+        protection_error = None
+        try:
+            protection = await self._conn.modify_position_protection(
+                entry_order.position_id, stop_loss=stop_loss, take_profit=take_profit,
+                intent_id=uuid4().hex)
+        except Exception as exc:
+            protection_error = str(exc)
+        if protection is None or protection.state != ResultState.CONFIRMED:
+            closed = await self._fail_safe_after_protection_error(
+                trade, entry_order.position_id, stop_loss, take_profit, protection_error
+            )
+            if closed:
+                raise OrderExecutionError(
+                    "Protection not confirmed; position was closed to avoid unhedged risk"
+                )
+            raise OrderExecutionError(
+                "Protection not confirmed; position remains open UNPROTECTED for reconciliation"
+            )
         self._db.add(TradeEvent(trade=trade, event_type="PROTECTION_CONFIRMED",
                                 payload={"position_id": protection.position_id}))
         await self._db.commit()
 
         return trade
+
+    async def _fail_safe_after_protection_error(
+        self,
+        trade: Trade,
+        position_id: str,
+        stop_loss: Decimal,
+        take_profit: Decimal | None,
+        protection_error: str | None,
+    ) -> bool:
+        """Fecha a posição quando a proteção não pôde ser confirmada."""
+        self._db.add(TradeEvent(
+            trade=trade,
+            event_type="PROTECTION_FAILED",
+            payload={
+                "position_id": position_id,
+                "stop_loss": str(stop_loss),
+                "take_profit": str(take_profit) if take_profit is not None else None,
+                "error": (protection_error or "not confirmed")[:250],
+            },
+        ))
+        close_error = None
+        try:
+            close_order = await self._conn.reduce_position(
+                position_id, trade.quantity, intent_id=uuid4().hex
+            )
+        except Exception as exc:
+            close_order = None
+            close_error = str(exc)
+
+        if (
+            close_order is not None
+            and close_order.state == ResultState.CONFIRMED
+            and close_order.filled == trade.quantity
+            and close_order.average is not None
+        ):
+            self._finalize_trade(
+                trade, close_order.average, "PROTECTION_FAILED", close_order.order_id
+            )
+            self._db.add(TradeEvent(
+                trade=trade,
+                event_type="PROTECTION_FAILED_CLOSED",
+                payload={"position_id": position_id, "exit_price": str(close_order.average)},
+            ))
+            await self._db.commit()
+            logger.critical(
+                "[executor] Proteção falhou no trade #%s; posição fechada a mercado.",
+                trade.id,
+            )
+            return True
+
+        self._db.add(TradeEvent(
+            trade=trade,
+            event_type="UNPROTECTED_POSITION",
+            payload={
+                "position_id": position_id,
+                "close_error": (close_error or "close not confirmed")[:250],
+            },
+        ))
+        await self._db.commit()
+        logger.critical(
+            "[executor] Trade #%s segue ABERTO E SEM PROTEÇÃO; reconciliação obrigatória.",
+            trade.id,
+        )
+        return False
 
     async def close_position(self, trade: Trade, reason: str = "manual") -> Trade:
         """Cancela OCO e fecha posição a mercado."""
@@ -124,7 +220,17 @@ class OrderExecutor:
         import datetime
 
         context = self._conn.context
-        if (trade.execution_context != context.snapshot() or not trade.position_id
+        snapshot = trade.execution_context or {}
+        expected = context.snapshot()
+        # paper_costs é metadado de execução e não faz parte da identidade.
+        identity_fields = (
+            "venue", "broker", "account_id", "nature", "mode", "market",
+            "instrument", "position_model",
+        )
+        identity_matches = all(
+            snapshot.get(field) == expected.get(field) for field in identity_fields
+        )
+        if (not identity_matches or not trade.position_id
                 or trade.account_id != context.account_id or trade.mode != context.mode.value):
             raise OrderExecutionError("Position identity unresolved or belongs to another account")
         close_order = await self._conn.reduce_position(trade.position_id, trade.quantity, intent_id=uuid4().hex)
@@ -258,13 +364,25 @@ class OrderExecutor:
         import datetime
 
         side_mult = Decimal("1") if trade.side == "buy" else Decimal("-1")
-        pnl_gross = (exit_price - trade.entry_price) * trade.quantity * side_mult
-        commission = (trade.entry_price + exit_price) * trade.quantity * Decimal("0.001")
+        snapshot = trade.execution_context or {}
+        cost_data = snapshot.get("paper_costs") or {}
+        instrument = snapshot.get("instrument") or {}
+        contract_size = Decimal(str(instrument.get("contract_size") or "1")) if cost_data else Decimal("1")
+        if cost_data:
+            spread_price = Decimal(str(cost_data["spread_price"]))
+            slippage_price = Decimal(str(cost_data["slippage_price"]))
+            commission_rate = Decimal(str(cost_data["commission_rate"]))
+            offset = spread_price + slippage_price
+            exit_price = exit_price - offset if trade.side == "buy" else exit_price + offset
+            commission = (trade.entry_price + exit_price) * trade.quantity * contract_size * commission_rate
+        else:
+            commission = (trade.entry_price + exit_price) * trade.quantity * Decimal("0.001")
+        pnl_gross = (exit_price - trade.entry_price) * trade.quantity * contract_size * side_mult
         pnl_net = pnl_gross - commission
 
         trade.status = "closed"
         trade.exit_price = exit_price
-        trade.exit_value = (exit_price * trade.quantity).quantize(Decimal("0.01"))
+        trade.exit_value = (exit_price * trade.quantity * contract_size).quantize(Decimal("0.01"))
         trade.close_at = datetime.datetime.now(datetime.timezone.utc)
         trade.close_reason = reason
         trade.close_order_id = close_order_id

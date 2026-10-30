@@ -57,5 +57,9 @@ celery_app.conf.update(
             "task": "tasks.trading_tasks.monitor_open_positions",
             "schedule": 60.0,  # a cada 1 minuto
         },
+        "didi-reconcile-open-positions": {
+            "task": "tasks.trading_tasks.reconcile_open_positions",
+            "schedule": 300.0,  # a cada 5 minutos
+        },
     },
 )

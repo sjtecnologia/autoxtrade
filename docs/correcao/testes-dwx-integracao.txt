@@ -1,0 +1,24 @@
+Achados de integração DWX/MT5 - 2026-09-25
+
+Origem inspecionada (somente leitura): /Volumes/MT5Files/DWX
+Share informado: smb://192.168.0.52/MT5Files
+
+Probe real
+- Arquivos DWX_* encontrados: DWX_Market_Data.txt, DWX_Orders.txt
+- Padrão derivado: DWX_<tipo>.txt (sem sufixo numérico)
+- Fonte de ordens: /Volumes/MT5Files/DWX/DWX_Orders.txt
+- Fonte de market data: /Volumes/MT5Files/DWX/DWX_Market_Data.txt
+- MarketWatchSymbols.txt: lido somente como hint de símbolos suportados
+- Símbolos do hint: 25
+- DWX_Market_Data.txt: vazio/sem payload; classificado como market data ausente e não fresco
+- Ausências registradas: DWX_Commands_*, DWX_Positions_*, DWX_Open_Orders_*
+- _TESTE_AUTOXTRADE.txt: ignorado por não ser arquivo DWX_*
+- Achado: o servidor usa nomes sem sufixo, enquanto canais do conector/protocolo podem esperar slots _N; recomendação futura: parametrizar nomes ou alinhar o conector ao EA.
+
+Validação
+- tests/unit/test_dwx_probe.py, test_dwx_protection.py e test_reconciliation.py: 9 passed
+- tests/: 132 passed / 0 xfailed
+- Nenhum DWX_Commands_* foi criado.
+- Nenhum arquivo do share foi alterado.
+- Nenhuma ordem real foi aberta, modificada, fechada ou enviada.
+- Reconciliação consulta DWX_Orders.txt quando disponível; posições ausentes não são inventadas.

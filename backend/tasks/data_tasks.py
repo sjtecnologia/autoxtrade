@@ -24,65 +24,72 @@ def check_drawdown() -> None:
 async def _record_equity_snapshot_async() -> None:
     from sqlalchemy import select
 
+    import redis.asyncio as aioredis
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
     from config import settings
-    from database import get_db
-    from db.models import BotConfig, EquitySnapshot, Trade
-    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-    import json
+    from db.models import BotConfig, EquitySnapshot
+    from trading.equity import collect_market_equity
+    from trading.market_feed import MarketDataUnavailable, latest_mark_price
 
     engine = create_async_engine(settings.database_url)
     Session = async_sessionmaker(engine, expire_on_commit=False)
-    async with Session() as db:
-        result = await db.execute(select(BotConfig).where(BotConfig.is_active == True))
-        configs = result.scalars().all()
+    redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
+    recorded = 0
+    try:
+        async with Session() as db:
+            result = await db.execute(select(BotConfig))
+            configs = result.scalars().all()
 
-        for config in configs:
-            market = config.market
-            # Busca saldo USDT via Redis
-            import redis.asyncio as aioredis
+            for config in configs:
+                async def _mark(symbol: str, market: str) -> Decimal:
+                    return await latest_mark_price(
+                        redis_client, symbol, market, settings
+                    )
 
-            r = aioredis.from_url(settings.redis_url, decode_responses=True)
-            try:
-                usdt_free = Decimal("0")
-                cached_balance = await r.get("balance:binance")
-                if cached_balance:
-                    data = json.loads(cached_balance)
-                    usdt_free = Decimal(str(data.get("USDT", {}).get("free", 0)))
-            finally:
-                await r.aclose()
+                try:
+                    equity = await collect_market_equity(db, config, mark_price=_mark)
+                except MarketDataUnavailable as exc:
+                    logger.warning(
+                        "[snapshot] %s sem preço confiável: %s", config.market, exc
+                    )
+                    continue
 
-            # Calcula open PnL das posições abertas
-            result_open = await db.execute(
-                select(Trade).where(Trade.market == market, Trade.status == "open")
-            )
-            open_trades = result_open.scalars().all()
+                if equity.status != "ok":
+                    logger.warning(
+                        "[snapshot] %s sem equity confiável: %s",
+                        config.market,
+                        equity.detail,
+                    )
+                    continue
 
-            open_pnl = Decimal("0")
-            for trade in open_trades:
-                # Usa entry_value como proxy (sem preço atual disponível no worker)
-                open_pnl += Decimal("0")  # será melhorado quando tiver preços em memória
+                snapshot = EquitySnapshot(
+                    snapshot_at=datetime.datetime.now(datetime.timezone.utc),
+                    market=config.market,
+                    equity=equity.equity.quantize(Decimal("0.01")),
+                    open_pnl=equity.open_pnl.quantize(Decimal("0.01")),
+                    realized_pnl=equity.realized_pnl.quantize(Decimal("0.01")),
+                    drawdown_1d=Decimal("0"),
+                    drawdown_30d=Decimal("0"),
+                    open_trades=equity.open_trades,
+                )
+                db.add(snapshot)
+                recorded += 1
+                logger.info(
+                    "[snapshot] %s %s/%s: saldo=%s open_pnl=%s equity=%s",
+                    config.market,
+                    equity.venue,
+                    equity.account_id,
+                    equity.balance,
+                    equity.open_pnl,
+                    equity.equity,
+                )
 
-            equity = usdt_free + open_pnl
-            if equity <= Decimal("0"):
-                logger.info("[snapshot] Equity zero para %s — pulando.", market)
-                continue
-
-            snapshot = EquitySnapshot(
-                snapshot_at=datetime.datetime.now(datetime.timezone.utc),
-                market=market,
-                equity=equity,
-                open_pnl=open_pnl,
-                realized_pnl=Decimal("0"),
-                drawdown_1d=Decimal("0"),
-                drawdown_30d=Decimal("0"),
-                open_trades=len(open_trades),
-            )
-            db.add(snapshot)
-
-        await db.commit()
-        logger.info("[snapshot] Equity snapshot registrado para %d mercados.", len(configs))
-
-    await engine.dispose()
+            await db.commit()
+            logger.info("[snapshot] Equity registrado para %d mercados.", recorded)
+    finally:
+        await redis_client.aclose()
+        await engine.dispose()
 
 
 async def _check_drawdown_async() -> None:

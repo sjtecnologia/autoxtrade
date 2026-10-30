@@ -2,6 +2,7 @@ from decimal import Decimal
 import json
 from datetime import datetime, timezone
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 
 def _dwx_dir(tmp_path):
@@ -13,12 +14,19 @@ def _dwx_dir(tmp_path):
 
 
 def _real_feed(tmp_path):
+    from datetime import timedelta
+
     directory = _dwx_dir(tmp_path)
+    now = datetime.now(ZoneInfo("Europe/Athens")).replace(second=0, microsecond=0)
+    timestamps = [
+        (now - timedelta(minutes=minutes)).strftime("%Y.%m.%d %H:%M")
+        for minutes in (15, 10, 5)
+    ]
     (directory / "DWX_Market_Data.txt").write_text('{"EURUSD.pr": {"bid": 1.1, "ask": 1.2}}')
     (directory / "DWX_Bar_Data.txt").write_text(
-        '{"EURUSD.pr_M5": {"time": "2026.09.25 20:55", "open": 1.1, "high": 1.2, "low": 1.0, "close": 1.15}}'
+        f'{{"EURUSD.pr_M5": {{"time": "{timestamps[-1]}", "open": 1.1, '
+        '"high": 1.2, "low": 1.0, "close": 1.15}}'
     )
-    timestamps = ["2026.09.25 20:45", "2026.09.25 20:50", "2026.09.25 20:55"]
     historic = {
         "EURUSD.pr_M5": {
             stamp: {"open": 1.1, "high": 1.2, "low": 1.0, "close": 1.15, "tick_volume": 10}

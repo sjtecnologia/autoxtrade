@@ -1,0 +1,20 @@
+diff --git a/backend/integration/market_data_refresh.py b/backend/integration/market_data_refresh.py
+new file mode 100644
++Refresh com debounce por símbolo/timeframe, frescor do tick/barra e whitelist de dados.
++
++diff --git a/backend/paper/run.py b/backend/paper/run.py
++@@
+++--mode real (default) consome histórico/tick/barra reais e grava price_source=mt5_real.
+++--mode synthetic exige seleção explícita e mantém seed rotulado.
++
++diff --git a/backend/tests/unit/test_market_data_refresh.py b/backend/tests/unit/test_market_data_refresh.py
++new file mode 100644
++Testes de debounce e não sobrescrita do canal pendente.
++
++diff --git a/backend/tests/unit/test_paper_run.py b/backend/tests/unit/test_paper_run.py
++@@
+++Teste de modo real com price_source=mt5_real.
++
++diff --git a/docs/correcao/ESTADO.md b/docs/correcao/ESTADO.md
++@@
+++Etapa 09 concluída com piloto real e refresh periódico.
