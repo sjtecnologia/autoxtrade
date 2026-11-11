@@ -109,7 +109,10 @@ def _normalize(item: dict[str, Any]) -> EntryApprovalResponse:
 
 @router.get("/entries", response_model=list[EntryApprovalResponse])
 async def list_entry_approvals(
-    status: str | None = Query(default=None, description="pending|approved|rejected|executed|failed"),
+    status: str | None = Query(
+        default=None,
+        description="pending|approved|executing|executed|rejected|expired|failed",
+    ),
     _: str = Depends(verify_token),
 ) -> list[EntryApprovalResponse]:
     svc = EntryApprovalService()
@@ -194,6 +197,10 @@ async def reject_entry(
         data = await svc.update_entry_status(
             approval_id, "rejected", expected_status="pending"
         )
+        if data is None:
+            existing = await svc.get_entry(approval_id)
+            if existing and existing.get("status") == "rejected":
+                data = existing
     finally:
         await svc.close()
 

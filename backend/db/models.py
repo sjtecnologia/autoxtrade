@@ -12,6 +12,7 @@ from sqlalchemy import (
     SmallInteger,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
@@ -45,6 +46,9 @@ class Trade(Base):
     take_profit: Mapped[Decimal | None] = mapped_column(Numeric(20, 8), nullable=True)
     open_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     open_order_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Intenção de execução que originou o trade (unicidade no banco: um trade
+    # por intent; legado sem intent fica NULL e o índice único tolera NULLs).
+    intent_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     # Fechamento
     exit_price: Mapped[Decimal | None] = mapped_column(Numeric(20, 8), nullable=True)
@@ -68,6 +72,7 @@ class Trade(Base):
 
     # Risk metadata
     risk_amount: Mapped[Decimal | None] = mapped_column(Numeric(20, 2), nullable=True)
+    capital_amount: Mapped[Decimal | None] = mapped_column(Numeric(20, 2), nullable=True)
     risk_pct: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
@@ -88,6 +93,7 @@ class Trade(Base):
         Index("idx_trades_open_at", "open_at"),
         Index("idx_trades_mode", "mode"),
         Index("idx_trades_model", "model_version"),
+        Index("idx_trades_intent", "intent_id", unique=True),
     )
 
 
@@ -246,6 +252,101 @@ class TradeEvent(Base):
         Index("idx_events_type", "event_type"),
         Index("idx_events_occurred", "occurred_at"),
     )
+
+
+class ExecutionIntent(Base):
+    """Intenção estável de entrada, persistida ANTES do envio da ordem.
+
+    `intent_id` é a mesma chave enviada ao transport (que é idempotente por
+    id: reenvios com o mesmo id não geram nova ordem). Vincula intenção,
+    resultado externo (order_id/position_id/result_state) e trade
+    (`Trade.intent_id`, único no banco).
+
+    Status:
+      - "reserved"  — risco/capital/capacidade reservados antes da aprovação;
+      - "planned"   — persistida antes do envio; ordem ainda não confirmada;
+      - "confirmed" — entrada confirmada externamente e trade persistido;
+      - "partial"   — exposição executada persistida e protegida, porém menor
+                      que a solicitada (`filled_quantity`); requer resolução;
+      - "unknown"   — desfecho externo desconhecido (timeout/resposta perdida);
+                      jamais reenviado automaticamente, requer reconciliação;
+      - "failed"    — envio rejeitado ou provadamente nunca enviado.
+    """
+
+    __tablename__ = "execution_intents"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    intent_id: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
+    market: Mapped[str] = mapped_column(String(10), nullable=False)
+    mode: Mapped[str] = mapped_column(String(10), nullable=False)
+    account_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    side: Mapped[str] = mapped_column(String(5), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(20, 8), nullable=False)
+    risk_amount: Mapped[Decimal | None] = mapped_column(Numeric(20, 2), nullable=True)
+    capital_amount: Mapped[Decimal | None] = mapped_column(Numeric(20, 2), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="planned")
+
+    # Resultado externo do envio
+    order_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    position_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    result_state: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Quantidade efetivamente executada conhecida até o momento (parciais)
+    filled_quantity: Mapped[Decimal | None] = mapped_column(Numeric(20, 8), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (Index("idx_execution_intent_account", "account_key"),)
+
+
+class EntryApproval(Base):
+    """Durable manual-entry workflow linked one-to-one to its risk intent."""
+
+    __tablename__ = "entry_approvals"
+
+    approval_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    intent_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("execution_intents.intent_id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    market: Mapped[str] = mapped_column(String(10), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    side: Mapped[str] = mapped_column(String(5), nullable=False)
+    mode: Mapped[str] = mapped_column(String(10), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    dedupe_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    error: Mapped[str | None] = mapped_column(String(250), nullable=True)
+    claim_token: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("intent_id", name="uq_entry_approvals_intent_id"),
+        UniqueConstraint("dedupe_key", name="uq_entry_approvals_dedupe_key"),
+        Index("idx_entry_approvals_status_expiry", "status", "expires_at"),
+        Index("idx_entry_approvals_lease", "status", "lease_until"),
+    )
+
+
+class RiskAccountLock(Base):
+    """Durable row used to serialize risk reservations for one account."""
+
+    __tablename__ = "risk_account_locks"
+
+    account_key: Mapped[str] = mapped_column(String(64), primary_key=True)
 
 
 class ConfigAuditLog(Base):

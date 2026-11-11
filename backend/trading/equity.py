@@ -154,6 +154,31 @@ async def paper_available_capital(db: AsyncSession, market: str) -> Decimal:
     return max(starting + realized, Decimal("0"))
 
 
+async def paper_available_account_capital(
+    db: AsyncSession,
+    *,
+    venue: str,
+    account_id: str,
+) -> Decimal:
+    """Paper capital for a bound account, shared across all its configured markets."""
+    base = settings.paper_initial_capital
+    if base is None:
+        return Decimal("0")
+    starting = _decimal(base)
+    if starting <= 0:
+        return Decimal("0")
+    result = await db.execute(
+        select(func.coalesce(func.sum(Trade.pnl_net), 0)).where(
+            Trade.exchange == venue,
+            Trade.account_id == account_id,
+            Trade.mode == "paper",
+            Trade.status == "closed",
+        )
+    )
+    realized = _decimal(result.scalar_one() or 0)
+    return max(starting + realized, Decimal("0"))
+
+
 async def _broker_balance(
     context: ExecutionContext, mode: str, currency: str
 ) -> Decimal:
@@ -177,6 +202,15 @@ async def _broker_balance(
     if total < 0:
         raise EquityUnavailable(f"Saldo negativo na conta {context.account_id}")
     return total
+
+
+async def available_account_capital(
+    context: ExecutionContext,
+    mode: str,
+    currency: str,
+) -> Decimal:
+    """Read the selected account's balance without using a cross-account cache."""
+    return await _broker_balance(context, mode, currency)
 
 
 async def collect_market_equity(

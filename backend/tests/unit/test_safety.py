@@ -1,4 +1,5 @@
 from decimal import Decimal
+from datetime import datetime, timedelta, timezone
 import shutil
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -115,24 +116,99 @@ async def test_binance_direct_methods_blocked():
 
 async def test_approval_service_blocks_live_before_status_write():
     from trading.approval_service import EntryApprovalService
+
+    row = SimpleNamespace(
+        approval_id="id",
+        intent_id="intent",
+        status="pending",
+        mode="live",
+        symbol="EURUSD",
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+        payload={},
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+        error=None,
+        dedupe_key="key",
+        claim_token=None,
+        lease_until=None,
+    )
+    db = AsyncMock()
+    db.execute.return_value = SimpleNamespace(scalar_one_or_none=lambda: row)
+
+    class _Context:
+        async def __aenter__(self):
+            return db
+
+        async def __aexit__(self, *_):
+            return False
+
+    class _Sessions:
+        def __call__(self):
+            return _Context()
+
+    class _Transaction:
+        async def __aenter__(self):
+            return None
+
+        async def __aexit__(self, *_):
+            return False
+
     svc = object.__new__(EntryApprovalService)
-    svc._redis = AsyncMock()
-    svc._redis.ttl.return_value = 60
-    svc.get_entry = AsyncMock(return_value={"mode": "live", "status": "pending"})
-    for status in ("approved", "executing"):
-        with pytest.raises(ExposureBlocked):
-            await svc.update_entry_status("id", status)
-    svc._redis.setex.assert_not_called()
+    svc._sessions = _Sessions()
+    svc._redis = None
+    db.begin = _Transaction
+    with pytest.raises(ExposureBlocked):
+        await svc.update_entry_status("id", "approved")
 
 
-async def test_create_pending_entry_claims_dedupe_atomically():
+async def test_create_pending_entry_uses_database_dedupe(monkeypatch):
     from trading.approval_service import EntryApprovalService
+    from trading import approval_service
+
+    monkeypatch.setattr(approval_service, "require_paper_new_exposure", lambda _: None)
+    intent = SimpleNamespace(
+        intent_id="stable-intent",
+        status="reserved",
+        market="FOREX",
+        mode="paper",
+        symbol="EURUSD",
+        side="buy",
+        quantity=Decimal("0.1"),
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=30),
+    )
+    results = [
+        SimpleNamespace(scalar_one_or_none=lambda: intent),
+        SimpleNamespace(scalar_one_or_none=lambda: None),
+        SimpleNamespace(scalar_one_or_none=lambda: None),
+    ]
+    db = AsyncMock()
+    db.execute.side_effect = results
+
+    class _Context:
+        async def __aenter__(self):
+            return db
+
+        async def __aexit__(self, *_):
+            return False
+
+    class _Sessions:
+        def __call__(self):
+            return _Context()
+
+    class _Transaction:
+        async def __aenter__(self):
+            return None
+
+        async def __aexit__(self, *_):
+            return False
 
     svc = object.__new__(EntryApprovalService)
-    svc._redis = AsyncMock()
-    svc._redis.set.return_value = None  # NX perdeu a corrida
+    svc._sessions = _Sessions()
+    svc._redis = None
+    db.begin = _Transaction
 
     result = await svc.create_pending_entry(
+        intent_id="stable-intent",
         market="FOREX", symbol="EURUSD", side="buy", mode="paper",
         entry_price=Decimal("1.1"), stop_loss=Decimal("1.09"),
         take_profit=Decimal("1.12"), quantity=Decimal("0.1"),
@@ -140,25 +216,58 @@ async def test_create_pending_entry_claims_dedupe_atomically():
     )
 
     assert result is None
-    svc._redis.setex.assert_not_called()
+    assert db.execute.await_count == 3
 
 
 async def test_update_entry_status_rejects_stale_expected_status():
     from trading.approval_service import EntryApprovalService
 
+    row = SimpleNamespace(
+        approval_id="id",
+        intent_id="intent",
+        status="executed",
+        mode="paper",
+        symbol="EURUSD",
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+        payload={},
+        created_at=datetime.now(timezone.utc),
+        updated_at=datetime.now(timezone.utc),
+        error=None,
+        dedupe_key=None,
+        claim_token=None,
+        lease_until=None,
+    )
+    db = AsyncMock()
+    db.execute.return_value = SimpleNamespace(scalar_one_or_none=lambda: row)
+
+    class _Context:
+        async def __aenter__(self):
+            return db
+
+        async def __aexit__(self, *_):
+            return False
+
+    class _Sessions:
+        def __call__(self):
+            return _Context()
+
+    class _Transaction:
+        async def __aenter__(self):
+            return None
+
+        async def __aexit__(self, *_):
+            return False
+
     svc = object.__new__(EntryApprovalService)
-    svc._redis = AsyncMock()
-    svc._redis.ttl.return_value = 60
-    svc.get_entry = AsyncMock(return_value={
-        "status": "executed", "mode": "paper", "symbol": "EURUSD",
-    })
+    svc._sessions = _Sessions()
+    svc._redis = None
+    db.begin = _Transaction
 
     result = await svc.update_entry_status(
         "id", "approved", expected_status="pending"
     )
 
     assert result is None
-    svc._redis.setex.assert_not_called()
 
 
 async def test_manual_approval_returns_conflict(monkeypatch):
@@ -240,7 +349,7 @@ async def test_monitor_runs_without_active_scanner_and_does_not_close_real(monke
     monkeypatch.setattr(redis, "from_url", lambda *a, **kw: cache)
     monkeypatch.setattr(
         trading_tasks,
-        "_load_ohlcv",
+        "_load_fresh_ohlcv",
         lambda *a: pd.DataFrame({
             "open": [100] * 80, "high": [100] * 80, "low": [100] * 80,
             "close": [100] * 80,

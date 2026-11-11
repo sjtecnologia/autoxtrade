@@ -3,10 +3,11 @@ import logging
 from decimal import Decimal
 
 import redis.asyncio as aioredis
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
-from db.models import Trade, TradeEvent
+from db.models import ExecutionIntent, Trade, TradeEvent
 from trading.connectors.types import OrderSide
 from trading.contracts import ExecutionContext, ExecutionMode
 from trading.safety import ExposureBlocked, require_paper_new_exposure
@@ -45,6 +46,7 @@ class PaperTrader:
         take_profit: Decimal | None,
         model_version: str | None = None,
         ml_confidence: Decimal | None = None,
+        intent_id: str | None = None,
     ) -> Trade:
         """Cria um trade simulado no banco."""
         require_paper_new_exposure(symbol)
@@ -64,6 +66,27 @@ class PaperTrader:
         execution_snapshot = context.snapshot()
         execution_snapshot["paper_costs"] = costs.as_dict()
         contract_size = context.instrument.contract_size
+        intent = None
+        if intent_id is not None:
+            result = await self._db.execute(
+                select(ExecutionIntent)
+                .where(ExecutionIntent.intent_id == intent_id)
+                .with_for_update()
+            )
+            intent = result.scalar_one_or_none()
+            if (
+                intent is None
+                or intent.status != "reserved"
+                or intent.market != self._market
+                or intent.mode != "paper"
+                or intent.symbol != symbol
+                or intent.side != side.value
+                or intent.quantity != quantity
+            ):
+                raise ExposureBlocked("Paper entry does not match its active risk reservation")
+            intent.status = "confirmed"
+            intent.result_state = "confirmed"
+            intent.filled_quantity = quantity
         trade = Trade(
             market=self._market,
             exchange=exchange,
@@ -79,6 +102,9 @@ class PaperTrader:
             entry_price=simulated_entry,
             quantity=quantity,
             entry_value=(simulated_entry * quantity * contract_size).quantize(Decimal("0.01")),
+            risk_amount=intent.risk_amount if intent is not None else None,
+            capital_amount=intent.capital_amount if intent is not None else None,
+            intent_id=intent_id,
             stop_loss=stop_loss,
             take_profit=take_profit,
             open_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),

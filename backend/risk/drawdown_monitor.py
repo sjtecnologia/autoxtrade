@@ -96,7 +96,7 @@ class DrawdownMonitor:
     async def check_and_enforce(self, market: str) -> DrawdownResult:
         """Verifica limites e aplica pausas automáticas se necessário."""
         result_cfg = await self._db.execute(
-            select(BotConfig).where(BotConfig.market == market)
+            select(BotConfig).where(BotConfig.market == market).with_for_update()
         )
         config = result_cfg.scalar_one_or_none()
         if config is None:
@@ -112,6 +112,8 @@ class DrawdownMonitor:
         if dd_result.peak_capital > (config.peak_capital or Decimal("0")):
             config.peak_capital = dd_result.peak_capital
 
+        notification_level = None
+
         # CRITICAL: ≥ max_drawdown_pct (15%) → PAUSED
         if dd_30d >= config.max_drawdown_pct and config.drawdown_status != "PAUSED":
             logger.critical(
@@ -125,7 +127,7 @@ class DrawdownMonitor:
             dd_result = DrawdownResult(
                 dd_result.dd_1d, dd_30d, dd_result.peak_capital, dd_result.current_equity, "PAUSED"
             )
-            await self._notify_and_broadcast(market, dd_30d, "CRITICAL")
+            notification_level = "CRITICAL"
 
         # WARNING: ≥ alert_pct (10%) → WARNING
         elif dd_30d >= config.drawdown_alert_pct and config.drawdown_status == "OK":
@@ -137,9 +139,11 @@ class DrawdownMonitor:
             dd_result = DrawdownResult(
                 dd_result.dd_1d, dd_30d, dd_result.peak_capital, dd_result.current_equity, "WARNING"
             )
-            await self._notify_and_broadcast(market, dd_30d, "WARNING")
+            notification_level = "WARNING"
 
         await self._db.commit()
+        if notification_level is not None:
+            await self._notify_and_broadcast(market, dd_30d, notification_level)
         return dd_result
 
     async def _notify_and_broadcast(self, market: str, dd_pct: Decimal, level: str) -> None:

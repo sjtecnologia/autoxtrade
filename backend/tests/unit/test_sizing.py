@@ -107,7 +107,7 @@ def test_sizing_never_exceeds_notional_with_contract_size():
         )
 
 
-async def test_risk_manager_blocks_invalid_sizing(monkeypatch):
+async def test_risk_manager_blocks_invalid_sizing(monkeypatch, risk_session):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock, MagicMock
 
@@ -115,16 +115,13 @@ async def test_risk_manager_blocks_invalid_sizing(monkeypatch):
     from trading import equity
     monkeypatch.setattr(equity, "paper_available_capital", AsyncMock(return_value=Decimal("10000")))
 
-    db = AsyncMock()
     config = SimpleNamespace(
+        market="CRIPTO",
         is_active=True, drawdown_status="OK", max_open_trades=3, mode="paper",
         max_corr_threshold=Decimal("0.7"), risk_per_trade_pct=Decimal("1"),
         execution_context={},
     )
-    cfg_result, trades_result = MagicMock(), MagicMock()
-    cfg_result.scalar_one_or_none.return_value = config
-    trades_result.scalars.return_value.all.return_value = []
-    db.execute.side_effect = [cfg_result, trades_result]
+    db = risk_session(config)
     sizer = MagicMock()
     sizer.get_available_capital.return_value = Decimal("10000")
     sizer.calculate.side_effect = PositionSizingError("Quantidade inválida")
@@ -138,7 +135,7 @@ async def test_risk_manager_blocks_invalid_sizing(monkeypatch):
     assert result.reason == "Quantidade inválida"
 
 
-async def test_risk_manager_fails_closed_without_capital(monkeypatch):
+async def test_risk_manager_fails_closed_without_capital(monkeypatch, risk_session):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock, MagicMock
 
@@ -146,16 +143,13 @@ async def test_risk_manager_fails_closed_without_capital(monkeypatch):
     from trading import equity
     monkeypatch.setattr(equity, "paper_available_capital", AsyncMock(return_value=Decimal("0")))
 
-    db = AsyncMock()
     config = SimpleNamespace(
+        market="CRIPTO",
         is_active=True, drawdown_status="OK", max_open_trades=3, mode="paper",
         max_corr_threshold=Decimal("0.7"), risk_per_trade_pct=Decimal("1"),
         execution_context={}, account_currency="USDT",
     )
-    cfg_result, trades_result = MagicMock(), MagicMock()
-    cfg_result.scalar_one_or_none.return_value = config
-    trades_result.scalars.return_value.all.return_value = []
-    db.execute.side_effect = [cfg_result, trades_result]
+    db = risk_session(config)
     sizer = MagicMock()
     sizer.get_available_capital.return_value = Decimal("0")
     correlation = AsyncMock()

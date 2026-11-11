@@ -200,3 +200,65 @@ def enforce_isolation(monkeypatch):
 def pytest_sessionfinish(session, exitstatus):
     if _violations:
         session.exitstatus = 1
+
+
+class _RiskResult:
+    def __init__(self, value=None, values=None):
+        self._value = value
+        self._values = values or []
+
+    def scalar_one_or_none(self):
+        return self._value
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return self._values
+
+
+class _RiskTransaction:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return False
+
+
+class _RiskSession:
+    def __init__(self, config, trades=(), intents=()):
+        self.config = config
+        self.trades = list(trades)
+        self.intents = list(intents)
+        self.added = []
+        self.execute_calls = []
+
+    async def execute(self, statement):
+        from db.models import BotConfig, ExecutionIntent, RiskAccountLock, Trade
+
+        self.execute_calls.append(statement)
+        descriptions = getattr(statement, "column_descriptions", [])
+        entity = descriptions[0].get("entity") if descriptions else None
+        if entity is BotConfig:
+            return _RiskResult(self.config)
+        if entity is Trade:
+            return _RiskResult(values=self.trades)
+        if entity is ExecutionIntent:
+            return _RiskResult(values=self.intents)
+        if entity is RiskAccountLock:
+            return _RiskResult()
+        return _RiskResult()
+
+    def add(self, value):
+        self.added.append(value)
+
+    def begin(self):
+        return _RiskTransaction()
+
+    async def commit(self):
+        return None
+
+
+@pytest.fixture
+def risk_session():
+    return _RiskSession

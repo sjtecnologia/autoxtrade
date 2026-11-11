@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import Decimal, ROUND_DOWN
 from pathlib import Path
 
 import pandas as pd
@@ -137,25 +138,224 @@ def replay(
     return _metrics(trades)
 
 
+def replay_signals(
+    frame: pd.DataFrame,
+    signals: Sequence[str],
+    *,
+    forward_candles: int,
+    spread_price: Decimal,
+    commission_rate: Decimal,
+    slippage_price: Decimal,
+    initial_capital: Decimal,
+    max_open_positions: int = 1,
+    risk_per_trade_pct: Decimal = Decimal("1"),
+    max_position_pct: Decimal = Decimal("10"),
+    contract_size: Decimal = Decimal("1"),
+    volume_step: Decimal = Decimal("0.00000001"),
+    min_quantity: Decimal | None = None,
+    max_quantity: Decimal | None = None,
+    leverage: Decimal = Decimal("1"),
+    margin_rate: Decimal | None = None,
+) -> dict:
+    """Replay model signals with ATR-based risk sizing and paper portfolio limits."""
+    required = {"open", "high", "low", "close"}
+    if not required.issubset(frame.columns):
+        raise ValueError(f"Signal replay requires OHLC columns: {sorted(required)}")
+    if len(frame) != len(signals):
+        raise ValueError("Signals and OHLC rows must have the same length")
+    if forward_candles < 1 or max_open_positions < 1:
+        raise ValueError("Forward horizon and position limit must be positive")
+    if initial_capital <= 0 or contract_size <= 0 or volume_step <= 0 or leverage <= 0:
+        raise ValueError("Capital, contract size, volume step and leverage must be positive")
+    if not Decimal("0") < risk_per_trade_pct <= Decimal("100"):
+        raise ValueError("Risk per trade must be between 0 and 100 percent")
+    if not Decimal("0") < max_position_pct <= Decimal("100"):
+        raise ValueError("Maximum position size must be between 0 and 100 percent")
+    if any(value < 0 for value in (spread_price, commission_rate, slippage_price)):
+        raise ValueError("Execution costs cannot be negative")
+    if margin_rate is not None and margin_rate <= 0:
+        raise ValueError("Margin rate must be positive")
+
+    frame = frame.reset_index(drop=True)
+    if "atr" in frame:
+        atr = frame["atr"]
+    else:
+        tr = pd.concat(
+            [
+                frame["high"] - frame["low"],
+                (frame["high"] - frame["close"].shift(1)).abs(),
+                (frame["low"] - frame["close"].shift(1)).abs(),
+            ],
+            axis=1,
+        ).max(axis=1)
+        atr = tr.rolling(14, min_periods=1).mean()
+    equity = initial_capital
+    peak = equity
+    max_drawdown = Decimal("0")
+    positions: list[dict] = []
+    trades: list[dict] = []
+    equity_curve: list[Decimal] = []
+    max_concurrent_positions_seen = 0
+
+    for i, row in frame.iterrows():
+        remaining: list[dict] = []
+        for position in positions:
+            if position["exit_idx"] <= i:
+                position["exit"] = float(row["close"])
+                position["exit_time"] = str(row.get("timestamp", i))
+                position["reason"] = "HORIZON"
+                settled = _settle(
+                    position, spread_price, commission_rate, slippage_price
+                )
+                pnl = Decimal(str(settled["pnl_net"]))
+                equity += pnl
+                settled["pnl_net"] = float(pnl)
+                settled["equity_at_entry"] = float(position["equity_at_entry"])
+                settled["return_on_equity_pct"] = float(
+                    pnl / position["equity_at_entry"] * 100
+                )
+                trades.append(settled)
+            else:
+                remaining.append(position)
+        positions = remaining
+
+        marked_equity = equity
+        for position in positions:
+            marked = {
+                **position,
+                "exit": float(row["close"]),
+                "reason": "MARK_TO_MARKET",
+            }
+            marked_equity += Decimal(str(_settle(
+                marked, spread_price, commission_rate, slippage_price
+            )["pnl_net"]))
+        peak = max(peak, marked_equity)
+        if peak > 0:
+            max_drawdown = max(max_drawdown, (peak - marked_equity) / peak)
+        equity_curve.append(marked_equity)
+
+        signal = signals[i]
+        if signal not in ("LONG", "SHORT") or i + forward_candles >= len(frame):
+            continue
+        if len(positions) >= max_open_positions:
+            continue
+
+        entry_idx = i + 1
+        exit_idx = i + forward_candles
+        entry_price = Decimal(str(frame.iloc[entry_idx]["open"]))
+        stop_distance = max(
+            Decimal(str(atr.iloc[i])),
+            entry_price * Decimal("0.001"),
+        )
+        free_capital = equity - sum(
+            (
+                Decimal(str(p["position_value"]))
+                * Decimal(str(p["margin_rate"]))
+                + Decimal(str(p["cost_reserve"]))
+                for p in positions
+            ),
+            Decimal("0"),
+        )
+        risk_budget = equity * risk_per_trade_pct / Decimal("100")
+        position_cap = min(
+            equity * max_position_pct / Decimal("100") * leverage,
+            free_capital * leverage,
+        )
+        risk_quantity = risk_budget / (stop_distance * contract_size)
+        round_trip_cost_per_unit = (
+            Decimal("2") * (spread_price + slippage_price)
+            + Decimal("2") * entry_price * commission_rate
+        )
+        notional_per_unit = (
+            entry_price + round_trip_cost_per_unit
+        ) * contract_size
+        capital_quantity = position_cap / notional_per_unit
+        quantity = min(risk_quantity, capital_quantity)
+        quantity = (
+            (quantity / volume_step).to_integral_value(rounding=ROUND_DOWN)
+            * volume_step
+        )
+        if max_quantity is not None:
+            quantity = min(
+                quantity,
+                (max_quantity / volume_step).to_integral_value(rounding=ROUND_DOWN)
+                * volume_step,
+            )
+        if min_quantity is not None and quantity < min_quantity:
+            continue
+        if quantity <= 0:
+            continue
+        used_margin_rate = margin_rate or Decimal("1") / leverage
+
+        positions.append({
+            "side": "buy" if signal == "LONG" else "sell",
+            "signal": str(signal),
+            "signal_time": str(row.get("timestamp", i)),
+            "fill_time": str(frame.iloc[entry_idx].get("timestamp", entry_idx)),
+            "entry": float(entry_price),
+            "exit_idx": exit_idx,
+            "quantity": float(quantity),
+            "contract_size": float(contract_size),
+            "position_value": float(quantity * entry_price * contract_size),
+            "margin_rate": float(used_margin_rate),
+            "cost_reserve": float(
+                quantity * round_trip_cost_per_unit * contract_size * used_margin_rate
+            ),
+            "equity_at_entry": equity,
+        })
+        max_concurrent_positions_seen = max(
+            max_concurrent_positions_seen, len(positions)
+        )
+
+    net_pnls = [Decimal(str(trade["pnl_net"])) for trade in trades]
+    gains = sum((pnl for pnl in net_pnls if pnl > 0), Decimal("0"))
+    losses = abs(sum((pnl for pnl in net_pnls if pnl < 0), Decimal("0")))
+    metrics = {
+        "wins": sum(pnl > 0 for pnl in net_pnls),
+        "losses": sum(pnl <= 0 for pnl in net_pnls),
+        "win_rate_pct": round(
+            sum(pnl > 0 for pnl in net_pnls) / len(net_pnls) * 100, 2
+        ) if net_pnls else 0,
+        "profit_factor": round(float(gains / losses), 4) if losses else (
+            "inf" if gains else 0
+        ),
+        "pnl_price_units": round(float(sum(net_pnls, Decimal("0"))), 6),
+        "expectancy_return_pct": round(
+            sum(trade["return_on_equity_pct"] for trade in trades) / len(trades), 6
+        ) if trades else 0,
+        "max_drawdown_pct": round(float(max_drawdown * 100), 4),
+        "ending_equity": float(equity),
+        "equity_curve": [float(value) for value in equity_curve],
+    }
+    return {
+        "trades": trades,
+        "total_trades": len(trades),
+        "max_concurrent_positions": max_concurrent_positions_seen,
+        "net_metrics_under_project_paper_costs": metrics,
+    }
+
+
 def _settle(
     trade: dict, spread_price: Decimal, commission_rate: Decimal,
     slippage_price: Decimal = Decimal("0"),
 ) -> dict:
     side_mult = 1 if trade["side"] == "buy" else -1
     raw_entry, raw_exit = Decimal(str(trade["entry"])), Decimal(str(trade["exit"]))
+    quantity = Decimal(str(trade.get("quantity", 1)))
+    contract_multiplier = quantity * Decimal(str(trade.get("contract_size", 1)))
     execution_cost = spread_price + slippage_price
     entry = raw_entry + execution_cost if side_mult == 1 else raw_entry - execution_cost
     exit_price = raw_exit - execution_cost if side_mult == 1 else raw_exit + execution_cost
-    gross = (raw_exit - raw_entry) * side_mult
-    spread_cost = spread_price * 2
-    slippage_cost = slippage_price * 2
-    commission = (entry + exit_price) * commission_rate
+    gross = (raw_exit - raw_entry) * side_mult * contract_multiplier
+    spread_cost = spread_price * 2 * contract_multiplier
+    slippage_cost = slippage_price * 2 * contract_multiplier
+    commission = (entry + exit_price) * commission_rate * contract_multiplier
     net = gross - spread_cost - slippage_cost - commission
     return {**trade, "fill_entry": float(entry), "fill_exit": float(exit_price),
             "pnl_gross": float(gross), "spread_cost": float(spread_cost),
             "slippage_cost": float(slippage_cost),
             "pnl_after_spread": float(gross - spread_cost), "commission": float(commission),
-            "pnl_net": float(net), "return_pct": float(net / entry * 100)}
+            "pnl_net": float(net), "return_pct": float(net / (entry * contract_multiplier) * 100)}
 
 
 def _metrics(trades: list[dict]) -> dict:

@@ -231,7 +231,8 @@ async def _process_didi_manual_entries(config, settings, Session) -> None:
             except ExposureBlocked as exc:
                 logger.warning("[safety] %s: entrada paper bloqueada: %s", symbol, exc)
                 continue
-            df = _load_ohlcv(symbol, market, settings)
+            # Decisão de entrada exige candles fechados e frescos; sem fallback.
+            df = _load_fresh_ohlcv(symbol, market, settings)
             if df is None or len(df) < 80:
                 continue
 
@@ -261,6 +262,8 @@ async def _process_didi_manual_entries(config, settings, Session) -> None:
                         symbol=symbol,
                         entry_price=entry_eval.entry_price,
                         stop_loss_price=entry_eval.stop_loss,
+                        side=str(getattr(entry_eval.direction, "value", entry_eval.direction)),
+                        reservation_ttl_seconds=int(settings.didi_approval_ttl_sec),
                     )
                     if not risk_result.approved:
                         continue
@@ -268,6 +271,8 @@ async def _process_didi_manual_entries(config, settings, Session) -> None:
                     qty = risk_result.position_size.quantity if risk_result.position_size else Decimal("0")
                     if qty <= 0:
                         continue
+                    if risk_result.intent_id is None:
+                        raise RuntimeError("Risk approval returned without a reservation id")
 
                     from trading.contracts import context_from_dict
 
@@ -276,6 +281,7 @@ async def _process_didi_manual_entries(config, settings, Session) -> None:
                     contract_size = bound.instrument.contract_size or Decimal("1")
 
                     payload = await approval_service.create_pending_entry(
+                        intent_id=risk_result.intent_id,
                         market=market,
                         symbol=symbol,
                         side=entry_eval.direction,
@@ -301,6 +307,8 @@ async def _process_didi_manual_entries(config, settings, Session) -> None:
                         analysis=entry_eval.analysis,
                         chart=entry_eval.chart,
                     )
+                    if payload is None:
+                        await risk.release_confirmed_reservation(risk_result.intent_id)
                     if payload:
                         image = render_entry_chart(payload, entry_eval.chart)
                         if image:
@@ -422,11 +430,14 @@ def _reprice_approval_levels(
 
 
 async def _process_entry_approvals_async() -> None:
+    import contextlib
+    from datetime import datetime, timezone
+
     from sqlalchemy import select
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
     from config import settings
-    from db.models import Trade
+    from db.models import BotConfig, ExecutionIntent, Trade
     from notifications.templates import format_position_opened
     from notifications.telegram import notifier
     from risk.correlation_checker import CorrelationChecker
@@ -436,6 +447,7 @@ async def _process_entry_approvals_async() -> None:
     from trading.approval_service import EntryApprovalService
     from trading.connectors.factory import get_connector
     from trading.connectors.types import OrderSide
+    from trading.contracts import ResultState, context_from_dict
     from trading.order_executor import OrderExecutor
     from trading.paper_trader import PaperTrader
 
@@ -447,13 +459,42 @@ async def _process_entry_approvals_async() -> None:
 
     engine = create_async_engine(settings.database_url)
     Session = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def keep_claims_alive() -> None:
+        while True:
+            await asyncio.sleep(60)
+            for entry in approved:
+                token = entry.get("_claim_token")
+                if token:
+                    try:
+                        renewed = await svc.renew_claim(entry["id"], token)
+                    except Exception:
+                        logger.exception(
+                            "[didi] Falha ao renovar claim da aprovação %s",
+                            entry["id"],
+                        )
+                        continue
+                    if not renewed:
+                        logger.error(
+                            "[didi] Claim da aprovacao %s foi perdido; "
+                            "resultado será recuperado pelo intent durável",
+                            entry["id"],
+                        )
+
+    heartbeat = asyncio.create_task(keep_claims_alive())
     try:
         for item in approved:
             approval_id = item.get("id")
             if not approval_id:
                 continue
 
+            intent_id = item.get("intent_id")
+            claim_token = item.get("_claim_token")
+            recovered = bool(item.get("_recovered_executing"))
+            trade = None
             try:
+                if not intent_id or not claim_token:
+                    raise RuntimeError("Approval claim lacks its durable intent or fencing token")
                 market = str(item["market"])
                 symbol = str(item["symbol"])
                 mode = str(item.get("mode") or "unknown")
@@ -462,24 +503,154 @@ async def _process_entry_approvals_async() -> None:
                 entry_price = Decimal(str(item["entry_price"]))
                 stop_loss = Decimal(str(item["stop_loss"]))
                 take_profit = Decimal(str(item["take_profit"]))
+                expires_at = datetime.fromisoformat(str(item["expires_at"]))
 
                 async with Session() as db:
-                    config = await _require_approved_entry(db, market, mode, symbol)
-                    from trading.contracts import context_from_dict
-                    bindings = config.execution_context or {}
-                    execution_context = context_from_dict(bindings.get(symbol))
-                    if execution_context.market != market or execution_context.mode.value != mode or execution_context.instrument.symbol != symbol:
-                        raise ValueError("Approval conflicts with server-side execution binding")
-                    existing = await db.execute(
-                        select(Trade).where(
-                            Trade.market == market,
-                            Trade.symbol == symbol,
-                            Trade.status == "open",
+                    config = (
+                        await db.execute(
+                            select(BotConfig).where(BotConfig.market == market)
                         )
+                    ).scalar_one_or_none()
+                    intent = (
+                        await db.execute(
+                            select(ExecutionIntent).where(
+                                ExecutionIntent.intent_id == intent_id
+                            )
+                        )
+                    ).scalar_one_or_none()
+                    if config is None or intent is None:
+                        raise RuntimeError("Approval configuration or execution intent is missing")
+                    execution_context = context_from_dict(
+                        (config.execution_context or {}).get(symbol)
                     )
-                    if existing.scalar_one_or_none() is not None:
-                        await svc.mark_entry_failed(approval_id, "ja_existe_posicao_aberta")
+                    if (
+                        execution_context.market != market
+                        or execution_context.mode.value != mode
+                        or execution_context.instrument.symbol != symbol
+                    ):
+                        raise ValueError("Approval conflicts with server-side execution binding")
+                    intent_status = intent.status
+                    await db.commit()
+
+                if recovered and mode == "paper":
+                    async with Session() as db:
+                        existing_trade = (
+                            await db.execute(
+                                select(Trade).where(Trade.intent_id == intent_id)
+                            )
+                        ).scalar_one_or_none()
+                        await db.commit()
+                    if existing_trade is not None:
+                        trade = existing_trade
+                    elif expires_at <= datetime.now(timezone.utc):
+                        await svc.expire_unstarted_claim(approval_id, claim_token)
                         continue
+                    elif intent_status != "reserved":
+                        await svc.mark_entry_failed(
+                            approval_id,
+                            f"Paper intent recovery needs reconciliation (status={intent_status})",
+                            claim_token,
+                        )
+                        continue
+
+                elif recovered:
+                    connector = get_connector(execution_context, mode=mode)
+                    try:
+                        await connector.connect()
+                        observed = await connector.query_order(intent_id=intent_id)
+                    finally:
+                        await _close_connector(connector)
+
+                    not_found = (
+                        observed.state == ResultState.UNKNOWN
+                        and observed.order_id is None
+                        and observed.position_id is None
+                        and observed.filled == 0
+                        and observed.reason == "Intent not found"
+                    )
+                    if not_found:
+                        if expires_at <= datetime.now(timezone.utc):
+                            await svc.reset_after_confirmed_not_found(
+                                approval_id, claim_token
+                            )
+                            continue
+                        if not await svc.reset_after_confirmed_not_found(
+                            approval_id, claim_token
+                        ):
+                            await svc.mark_entry_failed(
+                                approval_id,
+                                "Intent result remains unresolved after transport lookup",
+                                claim_token,
+                            )
+                            continue
+                    elif observed.state in {ResultState.UNKNOWN, ResultState.UNAVAILABLE}:
+                        await svc.mark_entry_failed(
+                            approval_id,
+                            observed.reason or "Execution result is still unknown",
+                            claim_token,
+                        )
+                        continue
+                    else:
+                        persisted_status = await svc.record_observed_execution(
+                            approval_id,
+                            claim_token,
+                            state=observed.state.value,
+                            order_id=observed.order_id,
+                            position_id=observed.position_id,
+                            filled_quantity=observed.filled,
+                        )
+                        if persisted_status is None:
+                            continue
+                        if persisted_status == "failed":
+                            await svc.mark_entry_failed(
+                                approval_id,
+                                observed.reason or "Transport rejected the entry",
+                                claim_token,
+                            )
+                            continue
+                        connector = get_connector(execution_context, mode=mode)
+                        try:
+                            await connector.connect()
+                            async with Session() as db:
+                                trade = await OrderExecutor(connector, db).open_position(
+                                    symbol=symbol,
+                                    side=side,
+                                    quantity=qty,
+                                    entry_price=entry_price,
+                                    stop_loss=stop_loss,
+                                    take_profit=take_profit,
+                                    model_version="didi-manual",
+                                    ml_confidence=None,
+                                    market=market,
+                                    intent_id=intent_id,
+                                )
+                        finally:
+                            await _close_connector(connector)
+
+                if trade is None:
+                    if not recovered and expires_at <= datetime.now(timezone.utc):
+                        await svc.expire_unstarted_claim(approval_id, claim_token)
+                        continue
+
+                    async with Session() as db:
+                        config = await _require_approved_entry(db, market, mode, symbol)
+                        execution_context = context_from_dict(
+                            (config.execution_context or {}).get(symbol)
+                        )
+                        existing = await db.execute(
+                            select(Trade).where(
+                                Trade.market == market,
+                                Trade.symbol == symbol,
+                                Trade.status == "open",
+                            )
+                        )
+                        if existing.scalar_one_or_none() is not None:
+                            await db.commit()
+                            await svc.mark_entry_failed(
+                                approval_id, "ja_existe_posicao_aberta", claim_token
+                            )
+                            continue
+                        await db.commit()
 
                     # Preço congelado na aprovação não é preço executável.
                     # Reprecifica os níveis e revalida o risco com o mercado atual.
@@ -496,49 +667,62 @@ async def _process_entry_approvals_async() -> None:
                         execution_context.instrument.tick_size,
                     )
 
-                    risk = RiskManager(
-                        db=db,
-                        position_sizer=PositionSizer(),
-                        drawdown_monitor=DrawdownMonitor(db),
-                        correlation_checker=CorrelationChecker(db),
-                    )
-                    risk_result = await risk.can_open_position(
-                        market=market,
-                        symbol=symbol,
-                        entry_price=entry_price,
-                        stop_loss_price=stop_loss,
-                    )
-                    if not risk_result.approved or risk_result.position_size is None:
-                        raise ValueError(f"risco_reprovado: {risk_result.reason}")
-                    max_quantity = risk_result.position_size.quantity
-                    if qty <= 0 or qty > max_quantity:
-                        raise ValueError(
-                            f"quantidade_acima_do_risco: solicitada={qty}, "
-                            f"maxima={max_quantity}"
+                    async with Session() as db:
+                        risk = RiskManager(
+                            db=db,
+                            position_sizer=PositionSizer(),
+                            drawdown_monitor=DrawdownMonitor(db),
+                            correlation_checker=CorrelationChecker(db),
                         )
+                        risk_result = await risk.can_open_position(
+                            market=market,
+                            symbol=symbol,
+                            entry_price=entry_price,
+                            stop_loss_price=stop_loss,
+                            side=side.value,
+                            intent_id=intent_id,
+                            requested_quantity=qty,
+                        )
+                        if not risk_result.approved or risk_result.position_size is None:
+                            raise ValueError(f"risco_reprovado: {risk_result.reason}")
+                        if risk_result.intent_id is None:
+                            raise RuntimeError("Risk approval returned without a reservation id")
+                        intent_id = risk_result.intent_id
+                        max_quantity = risk_result.position_size.quantity
+                        if qty <= 0 or qty > max_quantity:
+                            raise ValueError(
+                                f"quantidade_acima_do_risco: solicitada={qty}, "
+                                f"maxima={max_quantity}"
+                            )
+                        await db.commit()
 
                     if mode == "paper":
-                        trader = PaperTrader(db, market=market, context=execution_context)
-                        await trader.startup()
-                        try:
-                            trade = await trader.open_position(
-                                symbol=symbol,
-                                side=side,
-                                quantity=qty,
-                                entry_price=entry_price,
-                                stop_loss=stop_loss,
-                                take_profit=take_profit,
-                                model_version="didi-manual",
-                                ml_confidence=None,
+                        async with Session() as db:
+                            trader = PaperTrader(
+                                db, market=market, context=execution_context
                             )
-                        finally:
-                            await trader.shutdown()
-                    else:
-                        connector = get_connector(execution_context, mode=mode)
+                            try:
+                                await trader.startup()
+                                trade = await trader.open_position(
+                                    symbol=symbol,
+                                    side=side,
+                                    quantity=qty,
+                                    entry_price=entry_price,
+                                    stop_loss=stop_loss,
+                                    take_profit=take_profit,
+                                    model_version="didi-manual",
+                                    ml_confidence=None,
+                                    intent_id=intent_id,
+                                )
+                            finally:
+                                await trader.shutdown()
+
+                if trade is None and mode != "paper":
+                    connector = get_connector(execution_context, mode=mode)
+                    try:
                         await connector.connect()
-                        try:
-                            executor = OrderExecutor(connector, db)
-                            trade = await executor.open_position(
+                        async with Session() as db:
+                            trade = await OrderExecutor(connector, db).open_position(
                                 symbol=symbol,
                                 side=side,
                                 quantity=qty,
@@ -548,13 +732,20 @@ async def _process_entry_approvals_async() -> None:
                                 model_version="didi-manual",
                                 ml_confidence=None,
                                 market=market,
+                                intent_id=intent_id,
                             )
-                        finally:
-                            await _close_connector(connector)
+                    finally:
+                        await _close_connector(connector)
 
-                # A posição já existe: finaliza o estado antes de notificar para
-                # que uma falha de Telegram não marque a entrada como falha.
-                await svc.mark_entry_executed(approval_id)
+                # O resultado durável vem antes da notificação. Um claim perdido
+                # deixa a aprovação recuperável pelo próximo worker.
+                completed = await svc.mark_entry_executed(approval_id, claim_token)
+                if completed is None:
+                    logger.critical(
+                        "[didi] Execucao %s persistida, mas o claim expirou antes da conclusao",
+                        approval_id,
+                    )
+                    continue
                 try:
                     await notifier.send_message(format_position_opened(trade))
                 except Exception as notify_exc:
@@ -564,10 +755,70 @@ async def _process_entry_approvals_async() -> None:
                         notify_exc,
                     )
             except Exception as exc:
-                await svc.mark_entry_failed(approval_id, str(exc))
-                logger.error("[didi] Falha ao executar aprovacao %s: %s", approval_id, exc, exc_info=True)
+                intent_status = None
+                if intent_id:
+                    async with Session() as db:
+                        from db.models import ExecutionIntent
+
+                        result = await db.execute(
+                            select(ExecutionIntent).where(
+                                ExecutionIntent.intent_id == intent_id
+                            )
+                        )
+                        intent = result.scalar_one_or_none()
+                        intent_status = intent.status if intent is not None else None
+                        await db.commit()
+
+                if intent_id is None or intent_status in {"reserved", "failed"}:
+                    await svc.mark_entry_failed(
+                        approval_id, str(exc), claim_token
+                    )
+                    logger.error(
+                        "[didi] Falha ao executar aprovacao %s: %s",
+                        approval_id,
+                        exc,
+                        exc_info=True,
+                    )
+                elif intent_status in {"confirmed", "partial"}:
+                    async with Session() as db:
+                        trade = (
+                            await db.execute(
+                                select(Trade).where(Trade.intent_id == intent_id)
+                            )
+                        ).scalar_one_or_none()
+                        await db.commit()
+                    if trade is not None:
+                        completed = await svc.mark_entry_executed(
+                            approval_id, claim_token
+                        )
+                        if completed is not None:
+                            try:
+                                await notifier.send_message(format_position_opened(trade))
+                            except Exception as notify_exc:
+                                logger.error(
+                                    "[didi] Posição aberta, mas notificação falhou (%s): %s",
+                                    approval_id,
+                                    notify_exc,
+                                )
+                else:
+                    await svc.mark_entry_failed(
+                        approval_id, str(exc), claim_token
+                    )
+                    logger.critical(
+                        "[didi] Resultado incerto para aprovacao %s (intent=%s, status=%s); "
+                        "reserva preservada para reconciliacao: %s",
+                        approval_id,
+                        intent_id,
+                        intent_status,
+                        exc,
+                        exc_info=True,
+                    )
     finally:
+        heartbeat.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await heartbeat
         await svc.close()
+        await engine.dispose()
         await engine.dispose()
 
 
@@ -597,7 +848,9 @@ async def _monitor_open_positions_async() -> None:
             open_trades = result.scalars().all()
 
             for trade in open_trades:
-                df = _load_ohlcv(trade.symbol, trade.market, settings)
+                # Monitoramento de stops também decide apenas com candles
+                # fechados e frescos; dado indisponível bloqueia a decisão.
+                df = _load_fresh_ohlcv(trade.symbol, trade.market, settings)
                 if df is None or len(df) < 80:
                     continue
 
@@ -873,4 +1126,28 @@ def _load_ohlcv(symbol: str, market: str, settings) -> "pd.DataFrame | None":  #
     except Exception as exc:
         import logging as _log
         _log.getLogger(__name__).warning("Erro ao carregar OHLCV %s %s: %s", market, symbol, exc)
+        return None
+
+
+def _load_fresh_ohlcv(symbol: str, market: str, settings) -> "pd.DataFrame | None":  # type: ignore[name-defined]
+    """Candles fechados e frescos para decisões; indisponibilidade bloqueia a decisão.
+
+    Reusa trading.market_feed.load_fresh_ohlcv: filtra o candle em formação,
+    rejeita dado antigo/inválido e nunca inventa preço de fallback.
+    """
+    from trading.market_feed import MarketDataUnavailable, load_fresh_ohlcv
+
+    try:
+        return load_fresh_ohlcv(symbol, market, settings)
+    except MarketDataUnavailable as exc:
+        logger.warning(
+            "[data] %s %s sem candle fechado/fresco; decisão bloqueada: %s",
+            market, symbol, exc,
+        )
+        return None
+    except Exception as exc:
+        logger.warning(
+            "[data] %s %s falhou ao carregar candles; decisão bloqueada: %s",
+            market, symbol, exc,
+        )
         return None

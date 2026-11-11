@@ -4,15 +4,20 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
+from decimal import Decimal
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import joblib
+import numpy as np
 import pandas as pd
 
 logger = logging.getLogger(__name__)
 
 MODELS_DIR = Path(__file__).parent / "models"
+
+if TYPE_CHECKING:
+    from ml.feature_engineer import FeatureEngineer
 
 
 def _map_mt5_crypto_to_binance(symbol: str) -> str:
@@ -76,12 +81,13 @@ class ModelTrainer:
     TRAIN_MONTHS = 2
     TEST_MONTHS = 1
 
-    def __init__(self, db=None) -> None:
+    def __init__(self, db=None, *, validation_config: dict[str, Any] | None = None) -> None:
         """
         Args:
             db: AsyncSession do SQLAlchemy (opcional; se None, não persiste no DB)
         """
         self._db = db
+        self._validation_config = validation_config
 
     # ------------------------------------------------------------------
     # Treino principal
@@ -221,9 +227,21 @@ class ModelTrainer:
         # Log distribuição do target para diagnóstico
         target_dist = df["target"].value_counts().to_dict()
         logger.info("[trainer] Distribuição target %s: %s", symbol, target_dist)
-        X = df[available_features]
-        y = df["target"]
-        closes = df["close"].reset_index(drop=True)
+        X = df[available_features].reset_index(drop=True)
+        y = df["target"].reset_index(drop=True)
+        timestamps = df["timestamp"].reset_index(drop=True)
+        market_data = df[["timestamp", "open", "high", "low", "close"]].copy()
+        previous_close = market_data["close"].shift(1)
+        true_range = pd.concat(
+            [
+                market_data["high"] - market_data["low"],
+                (market_data["high"] - previous_close).abs(),
+                (market_data["low"] - previous_close).abs(),
+            ],
+            axis=1,
+        ).max(axis=1)
+        market_data["atr"] = true_range.rolling(14, min_periods=1).mean()
+        market_data = market_data.reset_index(drop=True)
 
         min_required_rows = int(cfg.get("min_required_rows", 200))
         if len(df) < min_required_rows:
@@ -238,11 +256,19 @@ class ModelTrainer:
         result.train_samples = len(df)
 
         # 3. Walk-forward CV
+        try:
+            paper_parameters = await self._paper_validation_parameters(market, symbol)
+        except (ValueError, RuntimeError) as exc:
+            result.rejection_reason = f"Configuração paper indisponível para validação ML: {exc}"
+            logger.error("[trainer] Modelo rejeitado: %s", result.rejection_reason)
+            return result
+
         fold_metrics = self._walk_forward_cv(
             X,
             y,
-            closes,
-            df["timestamp"],
+            market_data,
+            timestamps,
+            **paper_parameters,
             forward_candles=cfg["forward_candles"],
             min_train_samples=int(cfg.get("min_train_samples", 100)),
             min_test_samples=int(cfg.get("min_test_samples", 20)),
@@ -324,7 +350,9 @@ class ModelTrainer:
             return result
 
         # 4. Treinar modelo final + scaler
-        model, scaler = self._train_final_model(X, y, fe, version)
+        model, scaler = self._train_final_model(
+            X, y, fe, version, forward_candles=cfg["forward_candles"]
+        )
 
         # 5. Salvar arquivos
         model_path, scaler_path = self._save_model_files(model, scaler, version)
@@ -345,6 +373,76 @@ class ModelTrainer:
         )
         return result
 
+    async def _paper_validation_parameters(
+        self, market: str, symbol: str
+    ) -> dict[str, Any]:
+        """Resolve the same account/instrument limits used for paper sizing."""
+        from sqlalchemy import select
+
+        from config import settings
+        from db.models import BotConfig
+        from paper.costs import paper_costs_for
+        from trading.contracts import context_from_dict
+
+        if settings.paper_initial_capital is None or settings.paper_initial_capital <= 0:
+            raise ValueError("capital paper inicial não configurado")
+
+        config_data = self._validation_config
+        if config_data is None and self._db is not None:
+            result = await self._db.execute(
+                select(BotConfig).where(BotConfig.market == market)
+            )
+            config = result.scalar_one_or_none()
+            if config is not None:
+                config_data = {
+                    "market": config.market,
+                    "mode": config.mode,
+                    "enabled_symbols": list(config.enabled_symbols or []),
+                    "risk_per_trade_pct": config.risk_per_trade_pct,
+                    "max_open_trades": config.max_open_trades,
+                    "execution_context": config.execution_context or {},
+                }
+            await self._db.commit()
+        if not isinstance(config_data, dict) or config_data.get("market") != market:
+            raise ValueError(f"BotConfig ausente para {market}")
+        if config_data.get("mode") != "paper":
+            raise ValueError("validação de novas entradas exige conta paper")
+        if symbol not in config_data.get("enabled_symbols", []):
+            raise ValueError(f"{symbol} não está habilitado em BotConfig")
+
+        contexts = config_data.get("execution_context") or {}
+        raw_context = contexts.get(symbol)
+        if raw_context is None and (contexts.get("instrument") or {}).get("symbol") == symbol:
+            raw_context = contexts
+        context = context_from_dict(raw_context)
+        if (
+            context.mode.value != "paper"
+            or context.market != market
+            or context.instrument.symbol != symbol
+            or context.instrument.contract_size is None
+            or context.instrument.volume_step is None
+            or context.instrument.min_volume is None
+            or context.instrument.max_volume is None
+        ):
+            raise ValueError(f"execution_context incompleto ou incompatível para {symbol}")
+
+        risk_per_trade_pct = Decimal(str(config_data.get("risk_per_trade_pct", 0)))
+        max_open_positions = int(config_data.get("max_open_trades", 0))
+        if risk_per_trade_pct <= 0 or max_open_positions <= 0:
+            raise ValueError("limites de risco/posições devem ser positivos")
+        costs = paper_costs_for(symbol)
+        return {
+            "costs": costs,
+            "initial_capital": settings.paper_initial_capital,
+            "max_open_positions": max_open_positions,
+            "risk_per_trade_pct": risk_per_trade_pct,
+            "contract_size": context.instrument.contract_size,
+            "volume_step": context.instrument.volume_step,
+            "min_quantity": context.instrument.min_volume,
+            "max_quantity": context.instrument.max_volume,
+            "margin_rate": context.instrument.margin_rate,
+        }
+
     # ------------------------------------------------------------------
     # Walk-forward CV
     # ------------------------------------------------------------------
@@ -353,8 +451,18 @@ class ModelTrainer:
         self,
         X: pd.DataFrame,
         y: pd.Series,
-        closes: pd.Series,
+        market_data: pd.DataFrame,
         timestamps: pd.Series,
+        *,
+        costs,
+        initial_capital,
+        max_open_positions: int,
+        risk_per_trade_pct: Decimal,
+        contract_size: Decimal,
+        volume_step: Decimal,
+        min_quantity: Decimal,
+        max_quantity: Decimal,
+        margin_rate: Decimal,
         forward_candles: int = 5,
         min_train_samples: int = 100,
         min_test_samples: int = 20,
@@ -391,12 +499,16 @@ class ModelTrainer:
 
             train_mask = (timestamps >= train_start) & (timestamps < train_end)
             test_mask = (timestamps >= test_start) & (timestamps < test_end)
-
-            X_train, y_train = X[train_mask], y[train_mask]
-            X_test = X[test_mask]
-            y_test = y[test_mask]
-            closes_test = closes[test_mask].reset_index(drop=True)
-            X_test = X_test.reset_index(drop=True)
+            test_positions = np.flatnonzero(test_mask.to_numpy())
+            train_positions = self._purge_training_positions(
+                np.flatnonzero(train_mask.to_numpy()),
+                int(test_positions[0]) if len(test_positions) else len(X),
+                forward_candles,
+            )
+            X_train, y_train = X.iloc[train_positions], y.iloc[train_positions]
+            X_test = X.iloc[test_positions].reset_index(drop=True)
+            y_test = y.iloc[test_positions].reset_index(drop=True)
+            fold_market_data = market_data.iloc[test_positions].reset_index(drop=True)
 
             if len(X_train) < min_train_samples or len(X_test) < min_test_samples:
                 logger.warning("[trainer] Fold %d ignorado: dados insuficientes", fold + 1)
@@ -409,15 +521,29 @@ class ModelTrainer:
                 random_state=42,
                 n_jobs=-1,
             )
-            model.fit(X_train, y_train)
+            X_train_scaled, X_test_scaled = self._scale_fold_data(X_train, X_test)
+            model.fit(X_train_scaled, y_train)
 
             metrics = validator.validate(
                 model,
-                X_test,
+                X_test_scaled,
                 y_test,
-                closes_test,
-                forward_candles=forward_candles,
+                fold_market_data,
+                forward_candles,
+                costs=costs,
+                initial_capital=initial_capital,
+                max_open_positions=max_open_positions,
+                risk_per_trade_pct=risk_per_trade_pct,
+                contract_size=contract_size,
+                volume_step=volume_step,
+                min_quantity=min_quantity,
+                max_quantity=max_quantity,
+                margin_rate=margin_rate,
             )
+            fold_train_start = timestamps.iloc[train_positions[0]]
+            fold_train_end = timestamps.iloc[train_positions[-1]]
+            fold_test_start = timestamps.iloc[test_positions[0]]
+            fold_test_end = timestamps.iloc[test_positions[-1]]
             fold_results.append(
                 FoldMetrics(
                     fold=fold + 1,
@@ -426,10 +552,10 @@ class ModelTrainer:
                     total_trades=metrics.total_trades,
                     expectancy_pct=metrics.expectancy_pct,
                     max_drawdown_pct=metrics.max_drawdown_pct,
-                    train_start=train_start.to_pydatetime(),
-                    train_end=train_end.to_pydatetime(),
-                    test_start=test_start.to_pydatetime(),
-                    test_end=test_end.to_pydatetime(),
+                    train_start=pd.Timestamp(fold_train_start).to_pydatetime(),
+                    train_end=pd.Timestamp(fold_train_end).to_pydatetime(),
+                    test_start=pd.Timestamp(fold_test_start).to_pydatetime(),
+                    test_end=pd.Timestamp(fold_test_end).to_pydatetime(),
                 )
             )
             logger.info(
@@ -459,11 +585,14 @@ class ModelTrainer:
             if test_end_idx > n:
                 break
 
-            X_train = X.iloc[:train_end_idx]
-            y_train = y.iloc[:train_end_idx]
+            train_positions = self._purge_training_positions(
+                np.arange(train_end_idx), train_end_idx, forward_candles
+            )
+            X_train = X.iloc[train_positions]
+            y_train = y.iloc[train_positions]
             X_test = X.iloc[train_end_idx:test_end_idx].reset_index(drop=True)
             y_test = y.iloc[train_end_idx:test_end_idx].reset_index(drop=True)
-            closes_test = closes.iloc[train_end_idx:test_end_idx].reset_index(drop=True)
+            fold_market_data = market_data.iloc[train_end_idx:test_end_idx].reset_index(drop=True)
 
             if len(X_train) < min_train_samples or len(X_test) < min_test_samples:
                 continue
@@ -475,18 +604,28 @@ class ModelTrainer:
                 random_state=42,
                 n_jobs=-1,
             )
-            model.fit(X_train, y_train)
+            X_train_scaled, X_test_scaled = self._scale_fold_data(X_train, X_test)
+            model.fit(X_train_scaled, y_train)
 
             metrics = validator.validate(
                 model,
-                X_test,
+                X_test_scaled,
                 y_test,
-                closes_test,
-                forward_candles=forward_candles,
+                fold_market_data,
+                forward_candles,
+                costs=costs,
+                initial_capital=initial_capital,
+                max_open_positions=max_open_positions,
+                risk_per_trade_pct=risk_per_trade_pct,
+                contract_size=contract_size,
+                volume_step=volume_step,
+                min_quantity=min_quantity,
+                max_quantity=max_quantity,
+                margin_rate=margin_rate,
             )
 
             train_start = timestamps.iloc[0]
-            train_end = timestamps.iloc[train_end_idx - 1]
+            train_end = timestamps.iloc[train_positions[-1]]
             test_start = timestamps.iloc[train_end_idx]
             test_end = timestamps.iloc[test_end_idx - 1]
 
@@ -516,6 +655,36 @@ class ModelTrainer:
 
         return fold_results
 
+    @staticmethod
+    def _purge_training_positions(
+        train_positions, test_start_position: int, forward_candles: int
+    ):
+        """Drop training labels whose future horizon reaches the test boundary."""
+        if forward_candles < 0:
+            raise ValueError("Forward horizon cannot be negative")
+        return train_positions[train_positions < test_start_position - forward_candles]
+
+    @staticmethod
+    def _scale_fold_data(X_train, X_test):
+        """Fit feature scaling on a fold's training rows only."""
+        from sklearn.preprocessing import StandardScaler
+
+        from ml.feature_engineer import FEATURE_COLUMNS
+
+        scaled_columns = [column for column in FEATURE_COLUMNS if column in X_train]
+        if not scaled_columns:
+            return X_train, X_test
+        scaler = StandardScaler()
+        train_scaled = X_train.copy()
+        test_scaled = X_test.copy()
+        train_scaled.loc[:, scaled_columns] = scaler.fit_transform(
+            X_train[scaled_columns]
+        )
+        test_scaled.loc[:, scaled_columns] = scaler.transform(
+            X_test[scaled_columns]
+        )
+        return train_scaled, test_scaled
+
     # ------------------------------------------------------------------
     # Modelo final
     # ------------------------------------------------------------------
@@ -526,42 +695,61 @@ class ModelTrainer:
         y: pd.Series,
         fe: "FeatureEngineer",
         version: str,
+        forward_candles: int,
     ) -> tuple[Any, Any]:
         """Treina RandomForest em todos os dados com GridSearchCV."""
+        from sklearn.compose import ColumnTransformer
         from sklearn.ensemble import RandomForestClassifier
         from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
+        from sklearn.pipeline import Pipeline
+        from sklearn.preprocessing import StandardScaler
+        from ml.feature_engineer import FEATURE_COLUMNS
 
         # Normalizar features
         df_norm, scaler = fe.fit_transform(X.copy(), version)
         X_scaled = df_norm.values
-
-        param_grid = {
-            "n_estimators": [100, 200],
-            "max_depth": [5, 10, None],
-            "min_samples_split": [2, 5],
-        }
+        scaled_columns = [column for column in FEATURE_COLUMNS if column in X]
+        preprocessing = ColumnTransformer(
+            [("scale", StandardScaler(), scaled_columns)],
+            remainder="passthrough",
+        )
 
         # Em bases menores/irregulares, tenta GridSearch e cai para fit simples se necessário.
         try:
             if len(X_scaled) >= 90:
-                tscv = TimeSeriesSplit(n_splits=3)
+                tscv = TimeSeriesSplit(n_splits=3, gap=forward_candles)
             elif len(X_scaled) >= 45:
-                tscv = TimeSeriesSplit(n_splits=2)
+                tscv = TimeSeriesSplit(n_splits=2, gap=forward_candles)
             else:
                 raise ValueError("Amostra pequena para GridSearchCV estável")
 
             gs = GridSearchCV(
-                RandomForestClassifier(
-                    class_weight="balanced", random_state=42, n_jobs=-1
-                ),
-                param_grid,
+                Pipeline([
+                    ("preprocessing", preprocessing),
+                    ("classifier", RandomForestClassifier(
+                        class_weight="balanced", random_state=42, n_jobs=-1
+                    )),
+                ]),
+                {
+                    "classifier__n_estimators": [100, 200],
+                    "classifier__max_depth": [5, 10, None],
+                    "classifier__min_samples_split": [2, 5],
+                },
                 cv=tscv,
                 scoring="f1_weighted",
                 n_jobs=-1,
             )
-            gs.fit(X_scaled, y)
-            logger.info("[trainer] Melhores params: %s", gs.best_params_)
-            return gs.best_estimator_, scaler
+            gs.fit(X, y)
+            best_params = {
+                key.removeprefix("classifier__"): value
+                for key, value in gs.best_params_.items()
+            }
+            logger.info("[trainer] Melhores params: %s", best_params)
+            model = RandomForestClassifier(
+                class_weight="balanced", random_state=42, n_jobs=-1, **best_params
+            )
+            model.fit(X_scaled, y)
+            return model, scaler
         except Exception as exc:
             logger.warning("[trainer] Fallback sem GridSearchCV: %s", exc)
             model = RandomForestClassifier(

@@ -733,17 +733,31 @@ async def _train_optimize_timeframes_async(
     Session = async_sessionmaker(engine, expire_on_commit=False)
 
     try:
-        # Resolve universo de símbolos
+        # Preserve paper account/instrument limits during validation-only
+        # candidates without persisting an intermediate model.
+        async with Session() as db:
+            query = select(BotConfig)
+            if not (symbol and market):
+                query = query.where(BotConfig.is_active == True)
+            if market:
+                query = query.where(BotConfig.market == market)
+            result = await db.execute(query)
+            configs = result.scalars().all()
+        validation_configs = {
+            cfg.market: {
+                "market": cfg.market,
+                "mode": cfg.mode,
+                "enabled_symbols": list(cfg.enabled_symbols or []),
+                "risk_per_trade_pct": cfg.risk_per_trade_pct,
+                "max_open_trades": cfg.max_open_trades,
+                "execution_context": cfg.execution_context or {},
+            }
+            for cfg in configs
+        }
+
         if symbol and market:
             symbol_pairs = [(market, symbol)]
         else:
-            async with Session() as db:
-                query = select(BotConfig).where(BotConfig.is_active == True)
-                if market:
-                    query = query.where(BotConfig.market == market)
-                result = await db.execute(query)
-                configs = result.scalars().all()
-
             symbol_pairs: list[tuple[str, str]] = []
             for cfg in configs:
                 for sym in (cfg.enabled_symbols or []):
@@ -778,7 +792,10 @@ async def _train_optimize_timeframes_async(
                             dc.update_incremental(_map_mt5_crypto_to_binance(sym), tf)
 
                     # Avalia sem persistir modelo intermediário
-                    trainer_eval = ModelTrainer(db=None)
+                    trainer_eval = ModelTrainer(
+                        db=None,
+                        validation_config=validation_configs.get(mkt),
+                    )
                     eval_res = await trainer_eval.train(
                         symbol=sym,
                         timeframe=tf,

@@ -55,6 +55,9 @@ async def test_failed_protection_cannot_claim_close_without_execution():
     db.add = MagicMock()
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
+    lookup = MagicMock()
+    lookup.scalar_one_or_none.return_value = None
+    db.execute = AsyncMock(return_value=lookup)
     executor = OrderExecutor(conn, db)
     with pytest.raises(OrderExecutionError, match="UNPROTECTED"):
         await executor.open_position("TEST", OrderSide.BUY, D("1"), D("100"), D("95"))
@@ -82,39 +85,58 @@ async def test_dwx_protection_must_not_open_opposite_order(tmp_path):
     conn.place_order.assert_not_awaited()
 
 
-async def test_risk_must_use_sizer_and_drawdown(monkeypatch):
+async def test_risk_must_use_sizer_and_drawdown(monkeypatch, risk_session):
     from risk.manager import RiskManager
     from trading import equity
     monkeypatch.setattr(equity, "paper_available_capital", AsyncMock(return_value=D("10000")))
-    db = AsyncMock()
-    config = SimpleNamespace(is_active=True, drawdown_status="OK", max_open_trades=3,
+    config = SimpleNamespace(market="CRIPTO", is_active=True, drawdown_status="OK", max_open_trades=3,
                              mode="paper", max_corr_threshold=D("0.7"),
                              risk_per_trade_pct=D("1"), execution_context={})
-    cfg_result, trades_result = MagicMock(), MagicMock()
-    cfg_result.scalar_one_or_none.return_value = config
-    trades_result.scalars.return_value.all.return_value = []
-    db.execute.side_effect = [cfg_result, trades_result]
+    db = risk_session(config)
     sizer, drawdown, correlation = MagicMock(), AsyncMock(), AsyncMock()
     sizer.get_available_capital.return_value = D("10000")
-    sizing = SimpleNamespace(quantity=D("0.25"), risk_amount=D("5"), risk_pct=D("1"))
+    sizing = SimpleNamespace(quantity=D("0.25"), risk_amount=D("5"), risk_pct=D("1"),
+                              position_value=D("500"))
     sizer.calculate.return_value = sizing
     correlation.check.return_value = SimpleNamespace(blocked=False)
     result = await RiskManager(db, sizer, drawdown, correlation).can_open_position(
         "CRIPTO", "TEST", D("100"), D("80"))
     assert result.position_size.quantity == sizing.quantity
+    assert result.intent_id is not None
     sizer.calculate.assert_called_once()
 
 
 async def test_didi_rejects_bad_validation_metrics(monkeypatch):
     import pandas as pd
+    from config import settings
     from ml.trainer import ModelTrainer
     from ml.data_collector import DataCollector
     from ml.feature_engineer import FeatureEngineer
-    df = pd.DataFrame({"timestamp": pd.date_range("2024-01-01", periods=100, freq="h", tz="UTC"),
-                       "close": [100.] * 100, "target": [0, 1] * 50})
+    from paper.costs import PaperCostModel
+
+    df = pd.DataFrame({
+        "timestamp": pd.date_range("2024-01-01", periods=100, freq="h", tz="UTC"),
+        "open": [100.] * 100, "high": [101.] * 100, "low": [99.] * 100,
+        "close": [100.] * 100, "target": [0, 1] * 50,
+    })
     monkeypatch.setattr(DataCollector, "load_parquet", lambda *a: df.copy())
     monkeypatch.setattr(FeatureEngineer, "calculate_features", lambda self, data: data)
+    monkeypatch.setattr(settings, "paper_initial_capital", D("10000"))
+    monkeypatch.setattr(
+        "paper.costs.paper_costs_for",
+        lambda symbol: PaperCostModel(D("0.01"), D("0.001"), D("0.01")),
+    )
     trainer = ModelTrainer()
+    context = _context().snapshot()
+    context["instrument"]["symbol"] = "TEST/USDT"
+    trainer._validation_config = {
+        "market": "CRIPTO",
+        "mode": "paper",
+        "enabled_symbols": ["TEST/USDT"],
+        "risk_per_trade_pct": D("1"),
+        "max_open_trades": 3,
+        "execution_context": {"TEST/USDT": context},
+    }
     monkeypatch.setattr(trainer, "_calculate_didi_target", lambda data: data)
     bad_fold = SimpleNamespace(profit_factor=0., win_rate=0., expectancy_pct=-5.,
                                max_drawdown_pct=90., total_trades=0)
