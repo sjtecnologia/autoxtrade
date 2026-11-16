@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     paper_new_exposure_enabled: bool = False
     # Explicit paper account size. Unset means paper entries stay blocked.
     paper_initial_capital: Decimal | None = None
+    # Server-selected market evidence provider for durable paper protection.
+    # Empty means no source is configured and paper protection stays pending.
+    protection_evidence_provider: str = ""
     paper_costs_json: str = "{}"
     paper_qualification_path: str = ""
     didi_timeframe: str = "1h"

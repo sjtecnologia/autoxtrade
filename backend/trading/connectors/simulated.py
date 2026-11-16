@@ -39,34 +39,63 @@ class SimulatedConnector(BaseConnector):
         self._check_use(Capability.CREATE)
         if intent.context != self.context:
             raise ValueError("Request conflicts with bound execution identity")
+        if self._transport.durable_effects is not None:
+            return await self._transport.durable_create(intent)
         return self._transport.create(intent)
 
     async def query_order(self, *, intent_id=None, order_id=None):
         self._check_use(Capability.QUERY)
+        if self._transport.durable_effects is not None:
+            return await self._transport.durable_query(intent_id=intent_id, order_id=order_id)
         return self._transport.query(intent_id=intent_id, order_id=order_id)
 
     async def list_pending_orders(self):
         self._check_use(Capability.PENDING)
+        if self._transport.durable_effects is not None:
+            return await self._transport.durable_effects.pending_entries()
         return list(self._transport.pending())
+
+    async def observe_paper_fill(self, intent_id, *, filled, average, terminal, revision):
+        self._check_use(Capability.QUERY)
+        return await self._transport.observe_fill(intent_id, filled=filled, average=average,
+                                                  terminal=terminal, revision=revision)
 
     async def list_positions(self):
         self._check_use(Capability.POSITIONS)
+        if self._transport.durable_effects is not None:
+            return await self._transport.durable_positions()
         return list(self._transport.positions.values())
 
     async def cancel_pending_order(self, order_id, *, intent_id):
         self._check_use(Capability.CANCEL)
         return self._transport.cancel(order_id, intent_id)
 
-    async def modify_position_protection(self, position_id, *, stop_loss, take_profit=None, intent_id):
+    async def acquire_position_fence(self, position_id):
+        self._check_use(Capability.POSITIONS)
+        return await self._transport.acquire_fence(position_id)
+
+    async def modify_position_protection(self, position_id, *, stop_loss, take_profit=None, intent_id,
+                                         fence=None, revision=None, quantity=None, owner=None,
+                                         evidence_id=None):
         self._check_use(Capability.PROTECT)
+        if (self._transport.durable_effects is not None or fence is not None
+                or evidence_id is not None):
+            return await self._transport.durable_protect(
+                position_id, stop_loss, take_profit, intent_id, fence,
+                revision, quantity, owner, evidence_id=evidence_id,
+            )
         return self._transport.protect(position_id, stop_loss, take_profit, intent_id)
 
-    async def reduce_position(self, position_id, quantity, *, intent_id):
+    async def reduce_position(self, position_id, quantity, *, intent_id, fence=None, execution_price=None, owner=None):
         self._check_use(Capability.REDUCE)
+        if self._transport.durable_effects is not None or fence is not None or execution_price is not None:
+            return await self._transport.durable_reduce(position_id, quantity, intent_id, fence, execution_price, owner)
         return self._transport.reduce(position_id, quantity, intent_id)
 
     async def get_fills(self, *, order_id=None):
         self._check_use(Capability.FILLS)
+        if self._transport.durable_effects is not None:
+            raise CapabilityUnavailable("Durable paper fill listing is unavailable")
         return [f for f in self._transport.fills if order_id is None or f.order_id == order_id]
 
     async def place_order(self, symbol, side, order_type, amount, price=None, params=None):

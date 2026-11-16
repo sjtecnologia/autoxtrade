@@ -11,8 +11,10 @@ from pathlib import Path
 import pandas as pd
 
 from config import settings
-from trading.didi_strategy import _build_indicator_frame, evaluate_entry, evaluate_exit
-from trading.didi_strategy import evaluate_safe_break
+from trading.didi_strategy import (
+    _build_indicator_frame, _compute_stop_loss, evaluate_entry, evaluate_exit,
+    evaluate_paper_stop_target, evaluate_safe_break,
+)
 from trading.connectors.dwx import parse_server_timestamp
 
 DEFAULT_DATA = Path("/Volumes/MT5Files/DWX/DWX_Historic_Data.txt")
@@ -61,25 +63,15 @@ def replay(
         bar = frame.iloc[i]
         if open_trade:
             side = open_trade["side"]
-            sl_hit = bar.low <= open_trade["sl"] if side == "buy" else bar.high >= open_trade["sl"]
-            tp_hit = bar.high >= open_trade["tp"] if side == "buy" else bar.low <= open_trade["tp"]
-            # OHLC não revela a ordem intrabar quando ambos são tocados: assume SL.
-            if sl_hit or tp_hit:
-                reason = "SL" if sl_hit else "TP"
-                raw_exit = open_trade["sl"] if sl_hit else open_trade["tp"]
-                if side == "buy":
-                    if sl_hit and bar.open < raw_exit:
-                        raw_exit = bar.open
-                    elif tp_hit and bar.open > raw_exit:
-                        raw_exit = bar.open
-                else:
-                    if sl_hit and bar.open > raw_exit:
-                        raw_exit = bar.open
-                    elif tp_hit and bar.open < raw_exit:
-                        raw_exit = bar.open
+            stop_target = evaluate_paper_stop_target(
+                side, Decimal(str(open_trade["sl"])), Decimal(str(open_trade["tp"])),
+                Decimal(str(bar.open)), Decimal(str(bar.high)), Decimal(str(bar.low)),
+            )
+            if stop_target is not None:
+                reason, raw_exit = stop_target
                 open_trade["exit"] = float(raw_exit)
                 open_trade["exit_time"] = str(bar.timestamp)
-                open_trade["reason"] = reason
+                open_trade["reason"] = "SL" if reason == "SL_HIT" else "TP"
                 trades.append(_settle(open_trade, spread_price, commission_rate, slippage_price))
                 open_trade = None
             else:
@@ -156,8 +148,17 @@ def replay_signals(
     max_quantity: Decimal | None = None,
     leverage: Decimal = Decimal("1"),
     margin_rate: Decimal | None = None,
+    rr_target: Decimal = Decimal("2"),
+    safe_break_rr: Decimal = Decimal("1"),
+    auto_close_on_exit: bool = False,
 ) -> dict:
-    """Replay model signals with ATR-based risk sizing and paper portfolio limits."""
+    """Replay signals with DiDi-derived levels and paper portfolio limits.
+
+    ML has no operational entry path: the signal candle supplies DiDi's
+    technical stop, repriced at the next open while preserving distances.
+    The label horizon is not a position exit. Open positions remain open at
+    the test boundary and are marked to market, not counted as closed trades.
+    """
     required = {"open", "high", "low", "close"}
     if not required.issubset(frame.columns):
         raise ValueError(f"Signal replay requires OHLC columns: {sorted(required)}")
@@ -175,6 +176,10 @@ def replay_signals(
         raise ValueError("Execution costs cannot be negative")
     if margin_rate is not None and margin_rate <= 0:
         raise ValueError("Margin rate must be positive")
+    if rr_target <= 0 or safe_break_rr <= 0:
+        raise ValueError("Target and safe-break ratios must be positive")
+    if auto_close_on_exit and ("volume" not in frame or len(frame) < 80):
+        raise ValueError("Strategy exits require at least 80 OHLCV candles")
 
     frame = frame.reset_index(drop=True)
     if "atr" in frame:
@@ -200,10 +205,34 @@ def replay_signals(
     for i, row in frame.iterrows():
         remaining: list[dict] = []
         for position in positions:
-            if position["exit_idx"] <= i:
-                position["exit"] = float(row["close"])
+            side = position["side"]
+            stop_target = evaluate_paper_stop_target(
+                side, Decimal(str(position["sl"])), Decimal(str(position["tp"])),
+                Decimal(str(row["open"])), Decimal(str(row["high"])),
+                Decimal(str(row["low"])),
+            )
+            reason = None
+            exit_price = None
+            if stop_target is not None:
+                reason, exit_price = stop_target
+            else:
+                safe = evaluate_safe_break(
+                    side=side,
+                    entry_price=Decimal(str(position["effective_entry"])),
+                    stop_loss=Decimal(str(position["sl"])),
+                    current_price=Decimal(str(row["close"])),
+                    trigger_rr=safe_break_rr,
+                )
+                if safe.should_move:
+                    position["sl"] = float(safe.new_stop_loss)
+                    position["safe_break_armed"] = True
+                if auto_close_on_exit and evaluate_exit(frame.iloc[: i + 1], side).should_exit:
+                    reason = "DIDI_EXIT"
+                    exit_price = Decimal(str(row["close"]))
+            if reason is not None:
+                position["exit"] = float(exit_price)
                 position["exit_time"] = str(row.get("timestamp", i))
-                position["reason"] = "HORIZON"
+                position["reason"] = reason
                 settled = _settle(
                     position, spread_price, commission_rate, slippage_price
                 )
@@ -235,18 +264,23 @@ def replay_signals(
         equity_curve.append(marked_equity)
 
         signal = signals[i]
-        if signal not in ("LONG", "SHORT") or i + forward_candles >= len(frame):
+        if signal not in ("LONG", "SHORT") or i + 1 >= len(frame):
             continue
         if len(positions) >= max_open_positions:
             continue
 
         entry_idx = i + 1
-        exit_idx = i + forward_candles
         entry_price = Decimal(str(frame.iloc[entry_idx]["open"]))
-        stop_distance = max(
-            Decimal(str(atr.iloc[i])),
-            entry_price * Decimal("0.001"),
+        signal_price = Decimal(str(row["close"]))
+        side = "buy" if signal == "LONG" else "sell"
+        signal_stop = _compute_stop_loss(
+            frame.iloc[: i + 1], side, signal_price, Decimal(str(atr.iloc[i]))
         )
+        stop_distance = abs(signal_price - signal_stop)
+        stop_loss = entry_price - stop_distance if side == "buy" else entry_price + stop_distance
+        take_profit = entry_price + stop_distance * rr_target if side == "buy" else entry_price - stop_distance * rr_target
+        if stop_loss <= 0 or take_profit <= 0:
+            continue
         free_capital = equity - sum(
             (
                 Decimal(str(p["position_value"]))
@@ -257,10 +291,6 @@ def replay_signals(
             Decimal("0"),
         )
         risk_budget = equity * risk_per_trade_pct / Decimal("100")
-        position_cap = min(
-            equity * max_position_pct / Decimal("100") * leverage,
-            free_capital * leverage,
-        )
         risk_quantity = risk_budget / (stop_distance * contract_size)
         round_trip_cost_per_unit = (
             Decimal("2") * (spread_price + slippage_price)
@@ -269,7 +299,15 @@ def replay_signals(
         notional_per_unit = (
             entry_price + round_trip_cost_per_unit
         ) * contract_size
-        capital_quantity = position_cap / notional_per_unit
+        used_margin_rate = margin_rate or Decimal("1") / leverage
+        capital_quantity = min(
+            equity * max_position_pct / Decimal("100") * leverage
+            / notional_per_unit,
+            free_capital / (
+                (entry_price * used_margin_rate + round_trip_cost_per_unit)
+                * contract_size
+            ),
+        )
         quantity = min(risk_quantity, capital_quantity)
         quantity = (
             (quantity / volume_step).to_integral_value(rounding=ROUND_DOWN)
@@ -285,21 +323,24 @@ def replay_signals(
             continue
         if quantity <= 0:
             continue
-        used_margin_rate = margin_rate or Decimal("1") / leverage
+
 
         positions.append({
-            "side": "buy" if signal == "LONG" else "sell",
+            "side": side,
             "signal": str(signal),
             "signal_time": str(row.get("timestamp", i)),
             "fill_time": str(frame.iloc[entry_idx].get("timestamp", entry_idx)),
             "entry": float(entry_price),
-            "exit_idx": exit_idx,
+            "effective_entry": float(entry_price + spread_price + slippage_price if side == "buy" else entry_price - spread_price - slippage_price),
+            "sl": float(stop_loss),
+            "tp": float(take_profit),
+            "safe_break_armed": False,
             "quantity": float(quantity),
             "contract_size": float(contract_size),
             "position_value": float(quantity * entry_price * contract_size),
             "margin_rate": float(used_margin_rate),
             "cost_reserve": float(
-                quantity * round_trip_cost_per_unit * contract_size * used_margin_rate
+                quantity * round_trip_cost_per_unit * contract_size
             ),
             "equity_at_entry": equity,
         })
@@ -324,12 +365,13 @@ def replay_signals(
             sum(trade["return_on_equity_pct"] for trade in trades) / len(trades), 6
         ) if trades else 0,
         "max_drawdown_pct": round(float(max_drawdown * 100), 4),
-        "ending_equity": float(equity),
+        "ending_equity": float(equity_curve[-1] if equity_curve else equity),
         "equity_curve": [float(value) for value in equity_curve],
     }
     return {
         "trades": trades,
         "total_trades": len(trades),
+        "open_positions": len(positions),
         "max_concurrent_positions": max_concurrent_positions_seen,
         "net_metrics_under_project_paper_costs": metrics,
     }

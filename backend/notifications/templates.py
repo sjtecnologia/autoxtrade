@@ -212,5 +212,5 @@ def format_safe_break_armed(trade: Trade) -> str:
     return (
         f"🛡️ <b>SAFE BREAK ATIVADO</b>\n"
         f"Trade #{trade.id} | <b>{trade.symbol}</b>\n"
-        f"Stop ajustado para break-even em {_fmt_price(trade.entry_price)}"
+        f"Stop ajustado para break-even em {_fmt_price(trade.stop_loss)}"
     )

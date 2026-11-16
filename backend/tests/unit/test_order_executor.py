@@ -1,10 +1,11 @@
 """Testes unitários do OrderExecutor com conector simulado vinculado."""
 from decimal import Decimal
+from dataclasses import replace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from db.models import ExecutionIntent, Trade
+from db.models import ExecutionIntent, ProtectionAuthority, Trade
 from trading.connectors.memory_transport import MemoryTransport
 from trading.connectors.simulated import SimulatedConnector
 from trading.connectors.types import OrderSide
@@ -190,6 +191,7 @@ class FakeSession:
         self.rollback_calls = 0
         self.pending: list = []
         self.intents: dict[str, ExecutionIntent] = {}
+        self.authorities: dict[str, ProtectionAuthority] = {}
         self.trades: dict[str, Trade] = {}
         self._intent_state: dict[str, tuple] = {}
 
@@ -217,6 +219,9 @@ class FakeSession:
         if entity is Trade:
             key = next(iter(params.values()), None)
             return _Lookup(self.trades.get(key))
+        if entity is ProtectionAuthority:
+            key = next(iter(params.values()), None)
+            return _Lookup(self.authorities.get(key))
         return _Lookup(None)
 
     def _snapshot_intents(self) -> dict:
@@ -233,6 +238,8 @@ class FakeSession:
         for obj in self.pending:
             if isinstance(obj, ExecutionIntent):
                 self.intents[obj.intent_id] = obj
+            elif isinstance(obj, ProtectionAuthority):
+                self.authorities[obj.intent_id] = obj
             elif isinstance(obj, Trade):
                 self.trades[obj.intent_id] = obj
         self.pending.clear()
@@ -355,6 +362,88 @@ async def test_commit_failure_with_protection_failure_closes_despite_db_down(moc
     assert db.trades == {}                         # banco fora: nada persistiu
     assert db.intents["fail-safe"].status == "planned"
     assert db.rollback_calls >= 2                  # commits do fail-safe engolidos
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("close_state", ["protected", "confirmed", "unknown"])
+async def test_refresh_failure_still_protects_or_reduces_confirmed_exposure(
+    mock_connector, close_state,
+):
+    db = FakeSession()
+    db.refresh = AsyncMock(side_effect=RuntimeError("refresh unavailable"))
+    mock_connector._transport.scenarios["refresh-failure"] = Decimal("0.005")
+    original_protect = mock_connector.modify_position_protection
+    mock_connector.modify_position_protection = AsyncMock(wraps=original_protect)
+    if close_state != "protected":
+        mock_connector.modify_position_protection = AsyncMock(return_value=ExecutionResult(
+            "protect", ResultState.REJECTED, reason="simulated rejection"))
+    original_reduce = mock_connector.reduce_position
+    if close_state == "unknown":
+        mock_connector.reduce_position = AsyncMock(return_value=ExecutionResult(
+            "close", ResultState.UNKNOWN, reason="response lost"))
+    else:
+        mock_connector.reduce_position = AsyncMock(wraps=original_reduce)
+
+    with pytest.raises(OrderExecutionError):
+        await _open(OrderExecutor(mock_connector, db), intent_id="refresh-failure")
+
+    mock_connector.modify_position_protection.assert_awaited_once()
+    trade = db.trades["refresh-failure"]
+    if close_state == "protected":
+        mock_connector.reduce_position.assert_not_awaited()
+        assert mock_connector._transport.positions[trade.position_id].stop_loss == Decimal("48000")
+    else:
+        assert mock_connector.reduce_position.await_args.args[1] == Decimal("0.005")
+        if close_state == "confirmed":
+            assert trade.status == "closed"
+            assert not mock_connector._transport.positions
+        else:
+            assert trade.status == "open"
+            assert trade.position_id in mock_connector._transport.positions
+    assert len(mock_connector._transport.intents) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("entry_result", ["missing_average", "rejected_with_fill"])
+async def test_confirmed_filled_quantity_is_protected_even_with_incomplete_result(
+    mock_connector, entry_result,
+):
+    db = FakeSession()
+    original_create = mock_connector.create_order
+
+    async def create(intent):
+        result = await original_create(intent)
+        if entry_result == "missing_average":
+            return replace(result, average=None)
+        return replace(result, state=ResultState.REJECTED)
+
+    mock_connector.create_order = create
+    protect = AsyncMock(wraps=mock_connector.modify_position_protection)
+    mock_connector.modify_position_protection = protect
+    executor = OrderExecutor(mock_connector, db)
+    if entry_result == "missing_average":
+        with pytest.raises(OrderExecutionError, match="PROTECTED"):
+            await _open(executor, intent_id="incomplete-result")
+    else:
+        await _open(executor, intent_id="incomplete-result")
+    protect.assert_awaited_once()
+    position = next(iter(mock_connector._transport.positions.values()))
+    assert position.stop_loss == Decimal("48000")
+    assert len(mock_connector._transport.intents) == 1
+
+
+@pytest.mark.asyncio
+async def test_recovery_commit_failure_does_not_skip_existing_position_protection(mock_connector):
+    db = FakeSession()
+    await _open(OrderExecutor(mock_connector, db), intent_id="existing-protection")
+    db.fail_from_commit = db.commit_calls + 1
+    protect = AsyncMock(wraps=mock_connector.modify_position_protection)
+    mock_connector.modify_position_protection = protect
+
+    with pytest.raises(OrderExecutionError, match="[Pp]rotection confirmed|PROTECTED"):
+        await _open(OrderExecutor(mock_connector, db), intent_id="existing-protection")
+    protect.assert_awaited_once()
+    assert len(mock_connector._transport.intents) == 1
 
 
 @pytest.mark.asyncio
@@ -605,24 +694,31 @@ async def test_new_entry_allowed_after_intent_resolved_failed(mock_connector):
 
 
 @pytest.mark.asyncio
-async def test_never_sent_intent_reconciles_failed_and_allows_new_intent(mock_connector):
-    """Intent persistida que jamais chegou ao transport: reconcilia como
-    failed (sem exposição/ambiguidade) e uma nova intent pode entrar."""
+async def test_missing_receipt_keeps_intent_unknown_and_blocks_new_intent(mock_connector):
+    """Ausência do recibo não prova que outro executor deixou de enviar."""
     db = FakeSession()
     executor = OrderExecutor(mock_connector, db)
     db.add(ExecutionIntent(
         intent_id="nunca-enviado", market="CRIPTO", mode="paper",
         symbol="BTC/USDT", side="buy", quantity=Decimal("0.01"), status="planned",
     ))
+    snapshot = mock_connector.context.snapshot()
+    snapshot["capabilities"] = sorted(snapshot["capabilities"])
+    db.add(ProtectionAuthority(
+        intent_id="nunca-enviado", execution_context=snapshot, side="buy",
+        quantity=Decimal("0.01"), entry_price=Decimal("50000"),
+        initial_stop_loss=Decimal("48000"), initial_take_profit=Decimal("55000"),
+        stop_loss=Decimal("48000"), take_profit=Decimal("55000"),
+    ))
     await db.commit()
 
-    with pytest.raises(OrderExecutionError, match="never reached the transport"):
+    with pytest.raises(OrderExecutionError, match="outcome unknown"):
         await _open(executor, intent_id="nunca-enviado")
 
-    assert db.intents["nunca-enviado"].status == "failed"
+    assert db.intents["nunca-enviado"].status == "unknown"
     assert db.trades == {}
     assert mock_connector._transport.positions == {}
 
-    trade = await _open(executor, intent_id="depois-do-nao-enviado")
-    assert trade.status == "open"
-    assert len(mock_connector._transport.intents) == 1  # só a nova ordem
+    with pytest.raises(OrderExecutionError, match="Conflicting unresolved entry intent"):
+        await _open(executor, intent_id="depois-do-nao-enviado")
+    assert not mock_connector._transport.intents

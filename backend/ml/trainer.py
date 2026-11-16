@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
@@ -45,6 +46,7 @@ class FoldMetrics:
     train_end: datetime
     test_start: datetime
     test_end: datetime
+    open_positions: int = 0
 
 
 @dataclass
@@ -54,7 +56,7 @@ class TrainingResult:
     symbol: str
     timeframe: str
     fold_metrics: list[FoldMetrics] = field(default_factory=list)
-    avg_profit_factor: float = 0.0
+    avg_profit_factor: float | None = None
     avg_win_rate: float = 0.0
     avg_expectancy_pct: float = 0.0
     avg_max_drawdown_pct: float = 0.0
@@ -230,7 +232,10 @@ class ModelTrainer:
         X = df[available_features].reset_index(drop=True)
         y = df["target"].reset_index(drop=True)
         timestamps = df["timestamp"].reset_index(drop=True)
-        market_data = df[["timestamp", "open", "high", "low", "close"]].copy()
+        market_columns = ["timestamp", "open", "high", "low", "close"]
+        if "volume" in df.columns:
+            market_columns.append("volume")
+        market_data = df[market_columns].copy()
         previous_close = market_data["close"].shift(1)
         true_range = pd.concat(
             [
@@ -240,7 +245,10 @@ class ModelTrainer:
             ],
             axis=1,
         ).max(axis=1)
-        market_data["atr"] = true_range.rolling(14, min_periods=1).mean()
+        market_data["atr"] = (
+            df["ATRr_14"] if "ATRr_14" in df.columns
+            else true_range.rolling(14, min_periods=1).mean()
+        )
         market_data = market_data.reset_index(drop=True)
 
         min_required_rows = int(cfg.get("min_required_rows", 200))
@@ -278,12 +286,50 @@ class ModelTrainer:
         if not fold_metrics:
             result.rejection_reason = "Walk-forward sem folds válidos"
             return result
+        for index, fold in enumerate(fold_metrics):
+            for name in ("total_trades", "open_positions"):
+                value = getattr(fold, name, 0)
+                if not math.isfinite(value) or value < 0:
+                    result.rejection_reason = (
+                        f"Contagem {name} inválida no fold {index + 1} ({value})"
+                    )
+                    logger.info("[trainer] Modelo rejeitado: %s", result.rejection_reason)
+                    return result
+        if any(getattr(f, "open_positions", 0) for f in fold_metrics):
+            result.rejection_reason = "Walk-forward com posições abertas no fim do teste"
+            logger.info("[trainer] Modelo rejeitado: %s", result.rejection_reason)
+            return result
+        result.total_trades = sum(f.total_trades for f in fold_metrics)
+        if result.total_trades <= 0:
+            result.rejection_reason = "Trades insuficientes: nenhum trade nos folds"
+            logger.info("[trainer] Modelo rejeitado: %s", result.rejection_reason)
+            return result
+        metric_names = ("profit_factor", "win_rate", "expectancy_pct", "max_drawdown_pct")
+        for index, fold in enumerate(fold_metrics):
+            for name in metric_names:
+                value = getattr(fold, name)
+                if not math.isfinite(value):
+                    result.rejection_reason = (
+                        f"Métrica {name} não finita no fold {index + 1} ({value}); "
+                        "gates não podem ser avaliados"
+                    )
+                    logger.info("[trainer] Modelo rejeitado: %s", result.rejection_reason)
+                    return result
+            if fold.profit_factor < 0:
+                result.rejection_reason = f"Profit Factor negativo no fold {index + 1}"
+                logger.info("[trainer] Modelo rejeitado: %s", result.rejection_reason)
+                return result
 
         avg_pf = sum(f.profit_factor for f in fold_metrics) / len(fold_metrics)
         avg_wr = sum(f.win_rate for f in fold_metrics) / len(fold_metrics)
         avg_expectancy = sum(f.expectancy_pct for f in fold_metrics) / len(fold_metrics)
         avg_max_dd = sum(f.max_drawdown_pct for f in fold_metrics) / len(fold_metrics)
         total_trades = sum(f.total_trades for f in fold_metrics)
+
+        if not all(math.isfinite(value) for value in (avg_pf, avg_wr, avg_expectancy, avg_max_dd)):
+            result.rejection_reason = "Métrica agregada não finita; gates não podem ser avaliados"
+            logger.info("[trainer] Modelo rejeitado: %s", result.rejection_reason)
+            return result
 
         result.avg_profit_factor = round(avg_pf, 4)
         result.avg_win_rate = round(avg_wr, 2)
@@ -295,9 +341,13 @@ class ModelTrainer:
         pf_dispersion = 0.0
         if len(pf_values) > 1 and avg_pf > 0:
             mean_pf = avg_pf
-            variance = sum((x - mean_pf) ** 2 for x in pf_values) / len(pf_values)
-            std_pf = variance ** 0.5
-            pf_dispersion = std_pf / mean_pf
+            pf_dispersion = math.sqrt(
+                sum((x / mean_pf - 1) ** 2 for x in pf_values) / len(pf_values)
+            )
+        if not math.isfinite(pf_dispersion):
+            result.rejection_reason = "Dispersão de PF não finita; gates não podem ser avaliados"
+            logger.info("[trainer] Modelo rejeitado: %s", result.rejection_reason)
+            return result
 
         min_pf = cfg["min_pf"]
         min_wr = cfg["min_wr"]
@@ -539,6 +589,7 @@ class ModelTrainer:
                 min_quantity=min_quantity,
                 max_quantity=max_quantity,
                 margin_rate=margin_rate,
+                market_history=market_data.iloc[max(0, int(test_positions[0]) - 200):int(test_positions[0])],
             )
             fold_train_start = timestamps.iloc[train_positions[0]]
             fold_train_end = timestamps.iloc[train_positions[-1]]
@@ -556,6 +607,7 @@ class ModelTrainer:
                     train_end=pd.Timestamp(fold_train_end).to_pydatetime(),
                     test_start=pd.Timestamp(fold_test_start).to_pydatetime(),
                     test_end=pd.Timestamp(fold_test_end).to_pydatetime(),
+                    open_positions=metrics.open_positions,
                 )
             )
             logger.info(
@@ -622,6 +674,7 @@ class ModelTrainer:
                 min_quantity=min_quantity,
                 max_quantity=max_quantity,
                 margin_rate=margin_rate,
+                market_history=market_data.iloc[max(0, train_end_idx - 200):train_end_idx],
             )
 
             train_start = timestamps.iloc[0]
@@ -641,6 +694,7 @@ class ModelTrainer:
                     train_end=pd.Timestamp(train_end).to_pydatetime(),
                     test_start=pd.Timestamp(test_start).to_pydatetime(),
                     test_end=pd.Timestamp(test_end).to_pydatetime(),
+                    open_positions=metrics.open_positions,
                 )
             )
             logger.info(
@@ -787,12 +841,9 @@ class ModelTrainer:
     ) -> None:
         from db.models import MLModel
 
-        import math
-
-        # Sanitiza valores infinitos que não cabem em NUMERIC(8,4) do banco
         safe_pf = result.avg_profit_factor
-        if math.isinf(safe_pf) or math.isnan(safe_pf):
-            safe_pf = 999.9999 if safe_pf > 0 else 0.0
+        if safe_pf is None or not math.isfinite(safe_pf):
+            raise ValueError("Profit Factor não finito não pode ser persistido como métrica aprovada")
 
         hp = {}
         if hasattr(model, "get_params"):

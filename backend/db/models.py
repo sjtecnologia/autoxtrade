@@ -44,11 +44,17 @@ class Trade(Base):
     entry_value: Mapped[Decimal] = mapped_column(Numeric(20, 2), nullable=False)
     stop_loss: Mapped[Decimal] = mapped_column(Numeric(20, 8), nullable=False)
     take_profit: Mapped[Decimal | None] = mapped_column(Numeric(20, 8), nullable=True)
+    protection_levels_version: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default="1")
     open_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     open_order_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    paper_monitor_candle_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    paper_monitor_timeframe: Mapped[str | None] = mapped_column(String(10), nullable=True)
     # Intenção de execução que originou o trade (unicidade no banco: um trade
     # por intent; legado sem intent fica NULL e o índice único tolera NULLs).
     intent_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    protection_authority_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("protection_authorities.intent_id", ondelete="RESTRICT"), nullable=True
+    )
 
     # Fechamento
     exit_price: Mapped[Decimal | None] = mapped_column(Numeric(20, 8), nullable=True)
@@ -270,6 +276,7 @@ class ExecutionIntent(Base):
                       que a solicitada (`filled_quantity`); requer resolução;
       - "unknown"   — desfecho externo desconhecido (timeout/resposta perdida);
                       jamais reenviado automaticamente, requer reconciliação;
+      - "protection_pending" — dados reconciliados, proteção ainda não verificada;
       - "failed"    — envio rejeitado ou provadamente nunca enviado.
     """
 
@@ -293,6 +300,8 @@ class ExecutionIntent(Base):
     result_state: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # Quantidade efetivamente executada conhecida até o momento (parciais)
     filled_quantity: Mapped[Decimal | None] = mapped_column(Numeric(20, 8), nullable=True)
+    order_terminal: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    observation_revision: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -303,6 +312,61 @@ class ExecutionIntent(Base):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (Index("idx_execution_intent_account", "account_key"),)
+
+
+class ProtectionAuthority(Base):
+    """Desired protection and original request for an execution intent."""
+
+    __tablename__ = "protection_authorities"
+
+    intent_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("execution_intents.intent_id", ondelete="RESTRICT"), primary_key=True
+    )
+    execution_context: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    side: Mapped[str] = mapped_column(String(5), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(20, 8), nullable=False)
+    entry_price: Mapped[Decimal] = mapped_column(Numeric(20, 8), nullable=False)
+    initial_stop_loss: Mapped[Decimal] = mapped_column(Numeric(20, 8), nullable=False)
+    initial_take_profit: Mapped[Decimal | None] = mapped_column(Numeric(20, 8))
+    stop_loss: Mapped[Decimal] = mapped_column(Numeric(20, 8), nullable=False)
+    take_profit: Mapped[Decimal | None] = mapped_column(Numeric(20, 8))
+    version: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default="1")
+    levels_effective_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    levels_recorded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class PaperSafeBreakDecision(Base):
+    """Immutable monitor decision awaiting durable protection confirmation."""
+
+    __tablename__ = "paper_safe_break_decisions"
+
+    trade_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("trades.id", ondelete="RESTRICT"), primary_key=True
+    )
+    levels_version: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    intent_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("protection_authorities.intent_id", ondelete="RESTRICT"), nullable=False
+    )
+    candle_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(10), nullable=False)
+    interval_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    previous_cursor: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    previous_timeframe: Mapped[str | None] = mapped_column(String(10))
+    effective_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    old_stop: Mapped[Decimal] = mapped_column(Numeric(20, 8), nullable=False)
+    new_stop: Mapped[Decimal] = mapped_column(Numeric(20, 8), nullable=False)
+    take_profit: Mapped[Decimal | None] = mapped_column(Numeric(20, 8))
+    entry_price: Mapped[Decimal] = mapped_column(Numeric(20, 8), nullable=False)
+    exposure_quantity: Mapped[Decimal] = mapped_column(Numeric(20, 8), nullable=False)
+    entry_revision: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    candle: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.clock_timestamp()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("intent_id", "levels_version", name="uq_paper_safe_break_authority_version"),
+    )
 
 
 class EntryApproval(Base):

@@ -75,7 +75,8 @@ class FakeCCXTClient(MemoryTransport):
         return {"id": result.order_id, "clientOrderId": result.intent_id,
                 "symbol": self.context.instrument.symbol,
                 "status": {ResultState.REJECTED: "rejected", ResultState.UNKNOWN: "unknown"}.get(
-                    result.state, "closed" if intent and result.filled == intent.quantity else "open"),
+                    result.state, "canceled" if result.order_id in self.canceled else
+                    "closed" if result.terminal is True else "open"),
                 "filled": str(result.filled), "average": str(result.average) if result.average else None,
                 "amount": str(intent.quantity) if intent else "0", "position_id": result.position_id}
 

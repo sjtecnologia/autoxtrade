@@ -1,5 +1,6 @@
 """Immutable identities and capability contracts; no broker defaults or credentials."""
 from dataclasses import dataclass, field, asdict
+from datetime import datetime
 from decimal import Decimal
 from enum import Enum
 import json
@@ -160,7 +161,20 @@ class OrderIntent:
 
 
 @dataclass(frozen=True)
+class ExecutionIncrement:
+    """Durably recorded increase in simulated entry exposure."""
+
+    execution_id: str
+    revision: int
+    quantity: Decimal
+    cumulative_quantity: Decimal
+    executed_at: datetime
+
+
+@dataclass(frozen=True)
 class ExecutionResult:
+    """Order outcome; terminal=None means terminality is not confirmed."""
+
     intent_id: str
     state: ResultState
     order_id: str | None = None
@@ -168,6 +182,10 @@ class ExecutionResult:
     filled: Decimal = Decimal("0")
     average: Decimal | None = None
     reason: str | None = None
+    terminal: bool | None = None
+    revision: int | None = None
+    executions: tuple[ExecutionIncrement, ...] = ()
+    execution_history_complete: bool | None = None
 
 
 @dataclass(frozen=True)

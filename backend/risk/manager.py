@@ -3,11 +3,11 @@ import hashlib
 import logging
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from inspect import isawaitable
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,10 +16,13 @@ from risk.correlation_checker import CorrelationChecker
 from risk.drawdown_monitor import DrawdownMonitor
 from risk.position_sizer import PositionSizer, PositionSizeResult, PositionSizingError
 from trading.contracts import ExecutionContext, context_from_dict
+from trading.safety import ExposureBlocked
 
 logger = logging.getLogger(__name__)
 
-_RESERVED_STATUSES = ("reserved", "planned", "unknown", "partial")
+_RESERVED_STATUSES = (
+    "reserved", "planned", "unknown", "partial", "protection_pending", "confirmed",
+)
 
 
 @dataclass
@@ -104,19 +107,57 @@ class RiskManager:
     @staticmethod
     def _trade_risk(trade: Trade) -> Decimal:
         if trade.risk_amount is not None:
-            return Decimal(trade.risk_amount)
+            risk = Decimal(trade.risk_amount)
+            if not risk.is_finite() or risk < 0:
+                raise ValueError("risco registrado inválido")
+            if risk == 0 and Decimal(trade.entry_price) != Decimal(trade.stop_loss):
+                raise ValueError("risco zero sem stop no preço de entrada")
+            return risk
         snapshot = trade.execution_context or {}
         instrument = snapshot.get("instrument") or {}
-        contract_size = Decimal(str(instrument.get("contract_size") or "1"))
+        raw_size = instrument.get("contract_size")
+        if raw_size is None:
+            raise ValueError("tamanho de contrato ausente")
+        contract_size = Decimal(str(raw_size))
+        if not contract_size.is_finite() or contract_size <= 0:
+            raise ValueError("tamanho de contrato inválido")
         return abs(Decimal(trade.entry_price) - Decimal(trade.stop_loss)) * Decimal(
             trade.quantity
         ) * contract_size
 
     @staticmethod
     def _trade_capital(trade: Trade) -> Decimal:
-        if trade.capital_amount is not None:
-            return Decimal(trade.capital_amount)
-        return Decimal(trade.entry_value or 0)
+        amount = Decimal(trade.capital_amount if trade.capital_amount is not None else trade.entry_value)
+        if not amount.is_finite() or amount <= 0:
+            raise ValueError("capital comprometido ausente ou inválido")
+        return amount
+
+    @staticmethod
+    def _bound_trade_context(trade: Trade) -> ExecutionContext | None:
+        if trade.identity_status != "bound" or not isinstance(trade.execution_context, dict):
+            return None
+        snapshot = dict(trade.execution_context)
+        snapshot.pop("paper_costs", None)
+        try:
+            context = context_from_dict(snapshot)
+        except (ExposureBlocked, KeyError, TypeError, ValueError, InvalidOperation):
+            return None
+        if (
+            trade.exchange != context.venue or trade.account_id != context.account_id
+            or trade.mode != context.mode.value or trade.market != context.market
+            or trade.symbol != context.instrument.symbol
+            or trade.account_nature != context.nature.value
+            or trade.instrument_class != context.instrument.asset_class
+        ):
+            return None
+        return context
+
+    @staticmethod
+    def _trade_budget(trade: Trade) -> tuple[Decimal, Decimal]:
+        for value in (trade.entry_price, trade.stop_loss, trade.quantity):
+            if value is None or not Decimal(value).is_finite() or Decimal(value) <= 0:
+                raise ValueError("preço, stop ou quantidade ausente ou inválido")
+        return RiskManager._trade_risk(trade), RiskManager._trade_capital(trade)
 
     async def can_open_position(
         self,
@@ -293,6 +334,7 @@ class RiskManager:
                     current_intent is None
                     or current_intent.account_key != account_key
                     or current_intent.status != "reserved"
+                    or Decimal(current_intent.filled_quantity or 0) != 0
                 ):
                     return RiskCheckResult(
                         False, "A reserva não está pendente ou não pertence à conta."
@@ -314,14 +356,30 @@ class RiskManager:
                 .with_for_update()
             )
             for expired in expired_result.scalars().all():
-                if expired.intent_id != reservation_id:
+                if expired.intent_id != reservation_id and not expired.filled_quantity:
                     expired.status = "failed"
                     expired.result_state = "rejected"
 
-            account_trades_result = await self._db.execute(
-                select(Trade).where(*trade_filter, Trade.status == "open")
+            open_result = await self._db.execute(
+                select(Trade).where(Trade.status == "open").order_by(Trade.id).with_for_update()
             )
-            account_trades = list(account_trades_result.scalars().all())
+            account_trades = []
+            for trade in open_result.scalars().all():
+                trade_context = self._bound_trade_context(trade)
+                if trade_context is None or context is None:
+                    logger.warning("[risk] Trade %s sem identidade verificável; entrada bloqueada", trade.id)
+                    return RiskCheckResult(
+                        False, f"Trade aberto {trade.id} com identidade não resolvida; reconciliação necessária."
+                    )
+                if (trade_context.venue, trade_context.account_id, trade_context.mode) != (
+                    context.venue, context.account_id, context.mode
+                ):
+                    continue
+                if trade_context.account_currency != context.account_currency:
+                    return RiskCheckResult(
+                        False, f"Moeda da conta do trade {trade.id} divergente; reconciliação necessária."
+                    )
+                account_trades.append(trade)
             configs_result = await self._db.execute(select(BotConfig))
             account_configs = []
             for candidate in configs_result.scalars().all():
@@ -351,13 +409,16 @@ class RiskManager:
                 ),
                 default=risk_pct,
             )
-            open_intent_ids = {
-                trade.intent_id for trade in account_trades if trade.intent_id
+            open_trades_by_intent = {
+                trade.intent_id: trade for trade in account_trades if trade.intent_id
             }
             intents_result = await self._db.execute(
                 select(ExecutionIntent).where(
                     ExecutionIntent.account_key == account_key,
-                    ExecutionIntent.status.in_(_RESERVED_STATUSES),
+                    or_(
+                        ExecutionIntent.status.in_(_RESERVED_STATUSES),
+                        ExecutionIntent.filled_quantity > 0,
+                    ),
                 )
             )
             active_intents = [
@@ -365,28 +426,73 @@ class RiskManager:
                 for row in intents_result.scalars().all()
                 if row.intent_id != reservation_id
             ]
+            unresolved_ids = [
+                row.intent_id for row in active_intents
+                if row.intent_id not in open_trades_by_intent
+            ]
+            closed_trades_by_intent = {}
+            if unresolved_ids:
+                closed_result = await self._db.execute(
+                    select(Trade).where(
+                        *trade_filter, Trade.status == "closed",
+                        Trade.intent_id.in_(unresolved_ids),
+                    )
+                )
+                closed_trades_by_intent = {
+                    trade.intent_id: trade for trade in closed_result.scalars().all()
+                }
 
-            used_risk = sum(
-                (self._trade_risk(trade) for trade in account_trades),
-                Decimal("0"),
-            )
-            used_capital = sum(
-                (self._trade_capital(trade) for trade in account_trades),
-                Decimal("0"),
-            )
+            used_risk = Decimal("0")
+            used_capital = Decimal("0")
+            for trade in account_trades:
+                try:
+                    trade_risk, trade_capital = self._trade_budget(trade)
+                except (InvalidOperation, TypeError, ValueError) as exc:
+                    logger.warning("[risk] Orçamento do trade %s inválido: %s", trade.id, exc)
+                    return RiskCheckResult(
+                        False, f"Orçamento do trade {trade.id} desconhecido; reconciliação necessária."
+                    )
+                used_risk += trade_risk
+                used_capital += trade_capital
             pending_slots = 0
             for row in active_intents:
                 reserved_quantity = Decimal(row.quantity)
-                if reserved_quantity <= 0:
+                filled = Decimal(row.filled_quantity or 0)
+                if reserved_quantity <= 0 or filled < 0 or filled > reserved_quantity:
                     return RiskCheckResult(
                         False,
                         f"Intenção pendente inválida ({row.intent_id}); reconciliação necessária.",
                     )
-                remaining = reserved_quantity - Decimal(row.filled_quantity or 0)
-                ratio = max(remaining, Decimal("0")) / reserved_quantity
+                trade = open_trades_by_intent.get(row.intent_id)
+                closed_trade = closed_trades_by_intent.get(row.intent_id)
+                represented = trade or closed_trade
+                if represented is None:
+                    remaining = reserved_quantity
+                else:
+                    represented_quantity = min(
+                        Decimal(represented.quantity), filled, reserved_quantity
+                    )
+                    if represented_quantity < 0:
+                        return RiskCheckResult(
+                            False,
+                            f"Trade inválido ({row.intent_id}); reconciliação necessária.",
+                        )
+                    remaining = (
+                        filled - represented_quantity if row.order_terminal is True
+                        else reserved_quantity - represented_quantity
+                    )
+                if remaining > 0 and (
+                    row.risk_amount is None or row.capital_amount is None
+                    or row.risk_amount <= 0 or row.capital_amount <= 0
+                ):
+                    return RiskCheckResult(
+                        False,
+                        f"Orçamento ausente ou inválido ({row.intent_id}); reconciliação necessária.",
+                    )
+                ratio = remaining / reserved_quantity
                 used_risk += Decimal(row.risk_amount or 0) * ratio
                 used_capital += Decimal(row.capital_amount or 0) * ratio
-                if row.intent_id not in open_intent_ids:
+                if trade is None and (closed_trade is None or remaining > 0):
                     pending_slots += 1
 
             if len(account_trades) + pending_slots >= account_max_open_trades:
@@ -519,7 +625,10 @@ async def release_confirmed_reservation(
             .with_for_update()
         )
         intent = result.scalar_one_or_none()
-        if intent is None or intent.status != "reserved":
+        if (
+            intent is None or intent.status != "reserved"
+            or Decimal(intent.filled_quantity or 0) != 0
+        ):
             return False
         trade_result = await db.execute(
             select(Trade.id).where(Trade.intent_id == intent_id).limit(1)

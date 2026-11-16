@@ -61,7 +61,9 @@ def _paper_trade(**overrides) -> SimpleNamespace:
     trade = SimpleNamespace(
         id=1, mode="paper", market="FOREX", symbol="TEST", side="sell",
         entry_price=Decimal("100"), stop_loss=Decimal("150"),
-        take_profit=None, position_id="pos-1",
+        take_profit=None, position_id="pos-1", status="open",
+        open_at=(pd.Timestamp.now(tz="UTC").floor("h") - pd.Timedelta(hours=1)).to_pydatetime(),
+        paper_monitor_candle_at=None, paper_monitor_timeframe=None,
     )
     for key, value in overrides.items():
         setattr(trade, key, value)
@@ -78,7 +80,17 @@ def _patch_monitor_env(monkeypatch, trades: list, frames: dict):
     db = AsyncMock()
     result = MagicMock()
     result.scalars.return_value.all.return_value = trades
-    db.execute.return_value = result
+    result.scalar_one_or_none.return_value = trades[0] if trades else None
+    no_events = MagicMock()
+    no_events.scalar_one_or_none.return_value = None
+
+    async def execute(statement):
+        from db.models import TradeEvent
+
+        entity = statement.column_descriptions[0].get("entity")
+        return no_events if entity is TradeEvent else result
+
+    db.execute.side_effect = execute
     session = MagicMock()
     session.return_value.__aenter__.return_value = db
     monkeypatch.setattr(sa, "create_async_engine", lambda *a, **kw: AsyncMock())
@@ -243,3 +255,17 @@ async def test_monitor_fecha_stop_no_candle_fechado_valido(monkeypatch):
     await trading_tasks._monitor_open_positions_async()
 
     closed.assert_awaited_once_with(trade, Decimal("150"), "SL_HIT")
+
+
+async def test_monitor_carrega_historico_paper_alem_de_300_candles(monkeypatch):
+    from tasks import trading_tasks
+
+    data = _fixture(periods=320)
+    trade = _paper_trade(open_at=data.loc[0, "timestamp"].to_pydatetime())
+    closed, breaks, exits = _patch_monitor_env(monkeypatch, [trade], {"TEST": data})
+    await trading_tasks._monitor_open_positions_async()
+
+    closed.assert_not_awaited()
+    assert len(breaks) == 320
+    assert len(exits) == 320
+    assert trade.paper_monitor_candle_at == data.loc[319, "timestamp"]

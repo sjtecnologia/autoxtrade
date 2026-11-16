@@ -45,6 +45,30 @@ class SafeBreakEvaluation:
     reason: str
 
 
+def evaluate_paper_stop_target(
+    side: TradeSide,
+    stop_loss: Decimal,
+    take_profit: Decimal | None,
+    bar_open: Decimal,
+    high: Decimal,
+    low: Decimal,
+) -> tuple[str, Decimal] | None:
+    """Resolve touches with SL priority and the paper opening-gap convention."""
+    hit_stop = low <= stop_loss if side == "buy" else high >= stop_loss
+    hit_target = take_profit is not None and (
+        high >= take_profit if side == "buy" else low <= take_profit
+    )
+    if not hit_stop and not hit_target:
+        return None
+    level = stop_loss if hit_stop else take_profit
+    assert level is not None
+    if side == "buy":
+        price = min(bar_open, level) if hit_stop else max(bar_open, level)
+    else:
+        price = max(bar_open, level) if hit_stop else min(bar_open, level)
+    return ("SL_HIT" if hit_stop else "TP_HIT", price)
+
+
 def evaluate_entry(
     df: pd.DataFrame,
     *,

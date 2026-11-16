@@ -5,7 +5,7 @@ import hashlib
 import json
 import logging
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import uuid4
 
@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from config import settings
 from database import AsyncSessionLocal
-from db.models import EntryApproval, ExecutionIntent
+from db.models import EntryApproval, ExecutionIntent, Trade
 from trading.safety import require_entry_mode, require_paper_new_exposure
 
 logger = logging.getLogger(__name__)
@@ -284,6 +284,9 @@ class EntryApprovalService:
                         require_entry_mode(row.mode)
 
                 if new_status == "executed":
+                    if (claim_token is None or row.lease_until is None
+                            or row.lease_until <= now):
+                        return None
                     intent = (
                         await db.execute(
                             select(ExecutionIntent)
@@ -291,8 +294,65 @@ class EntryApprovalService:
                             .with_for_update()
                         )
                     ).scalar_one_or_none()
-                    if intent is None or intent.status not in {"confirmed", "partial"}:
+                    if intent is None or intent.status != "confirmed":
                         return None
+                    trade = (await db.execute(
+                        select(Trade).where(Trade.intent_id == row.intent_id).with_for_update()
+                    )).scalar_one_or_none()
+                    if trade is None or trade.status != "open":
+                        return None
+                    from trading.paper_trader import is_durable_paper_position
+                    if row.mode == "paper" and (
+                        is_durable_paper_position(trade.position_id)
+                        or is_durable_paper_position(intent.position_id)
+                    ):
+                        from paper.costs import parse_costs
+                        from paper.durable_effects import PaperEffectOperation
+                        from paper.safe_break import _confirmed_protection, _effects
+                        from trading.safety import ExposureBlocked
+
+                        if (trade.position_id != "paper_" + row.intent_id
+                                or intent.position_id != trade.position_id
+                                or intent.order_id != trade.open_order_id
+                                or intent.result_state != "confirmed"
+                                or intent.order_terminal is not True
+                                or intent.filled_quantity != intent.quantity
+                                or trade.quantity != intent.quantity
+                                or (trade.market, trade.mode, trade.symbol, trade.side)
+                                != (row.market, row.mode, row.symbol, row.side)):
+                            return None
+                        try:
+                            if Decimal(str(row.payload["quantity"])) != intent.quantity:
+                                return None
+                            effects, _ = _effects(self._sessions, dict(trade.execution_context or {}))
+                            locked_intent, locked_trade, authority, position = await effects._locked_protection_state(
+                                db, trade.position_id,
+                            )
+                            entry = await db.get(PaperEffectOperation, (
+                                effects._account_key, trade.position_id, "entry:" + row.intent_id,
+                            ))
+                            if entry is None or entry.result.get("terminal") is not True:
+                                return None
+                            costs_data = entry.payload["paper_costs"]
+                            costs = parse_costs({row.symbol: costs_data})[row.symbol]
+                            raw_price = Decimal(entry.result["average"])
+                            offset = costs.spread_price + costs.slippage_price
+                            adjusted_price = raw_price + offset if trade.side == "buy" else raw_price - offset
+                            if (not raw_price.is_finite() or raw_price <= 0
+                                    or position.entry_price != raw_price
+                                    or entry.result.get("order_id") != intent.order_id
+                                    or (trade.execution_context or {}).get("paper_costs") != costs_data
+                                    or trade.entry_price != adjusted_price
+                                    or trade.entry_value != (
+                                        adjusted_price * trade.quantity * effects.context.instrument.contract_size
+                                    ).quantize(Decimal("0.01"))
+                                    or not await _confirmed_protection(
+                                        db, effects, locked_intent, locked_trade, authority, position,
+                                    )):
+                                return None
+                        except (ExposureBlocked, ValueError, KeyError, TypeError, InvalidOperation) as exc:
+                            logger.error("[approval] Resultado durável inconsistente para %s: %s", row.intent_id, exc)
+                            return None
 
                 if new_status in {"rejected", "expired", "failed"}:
                     intent = (
@@ -605,7 +665,7 @@ class EntryApprovalService:
                 .with_for_update()
             )
         ).scalar_one_or_none()
-        if intent is not None and intent.status in {"planned", "unknown", "partial", "confirmed"}:
+        if intent is not None and intent.status in {"planned", "unknown", "partial", "confirmed", "protection_pending"}:
             row.status = "executing"
             row.claim_token = None
             row.lease_until = None

@@ -20,6 +20,10 @@ SIMULATED_SPREAD = Decimal("0.001")
 SIMULATED_COMMISSION = Decimal("0.001")
 
 
+def is_durable_paper_position(position_id: str | None) -> bool:
+    return isinstance(position_id, str) and position_id.startswith("paper_")
+
+
 class PaperTrader:
     """Gerencia trades simulados monitorando preços via Redis."""
 
@@ -150,6 +154,10 @@ class PaperTrader:
     async def _close_position(self, trade: Trade, exit_price: Decimal, reason: str) -> None:
         import datetime
 
+        if is_durable_paper_position(trade.position_id):
+            raise ExposureBlocked(
+                f"Paper trade {trade.id} has a position identity; durable close requires reconciliation"
+            )
         qty = trade.quantity
         entry = trade.entry_price
         side_mult = Decimal("1") if trade.side == "buy" else Decimal("-1")

@@ -806,7 +806,7 @@ async def _train_optimize_timeframes_async(
                         {
                             "timeframe": tf,
                             "approved": bool(eval_res.approved),
-                            "profit_factor": float(eval_res.avg_profit_factor or 0.0),
+                            "profit_factor": eval_res.avg_profit_factor,
                             "win_rate": float(eval_res.avg_win_rate or 0.0),
                             "total_trades": int(eval_res.total_trades or 0),
                             "rejection_reason": eval_res.rejection_reason,
@@ -831,7 +831,7 @@ async def _train_optimize_timeframes_async(
                 [
                     (
                         f"{c['timeframe']}"
-                        f"(PF={float(c.get('profit_factor', 0.0) or 0.0):.2f},"
+                        f"(PF={format(c['profit_factor'], '.2f') if c.get('profit_factor') is not None else 'indisponível'},"
                         f"WR={float(c.get('win_rate', 0.0) or 0.0):.1f}%,"
                         f"T={int(c.get('total_trades', 0) or 0)})"
                     )

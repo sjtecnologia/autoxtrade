@@ -57,7 +57,7 @@ class BinanceConnector(SimulatedConnector):
             # A lost response is not rejection. Query first, NEVER repeat create.
             return await self.query_order(intent_id=intent.id)
         except ccxt.InvalidOrder:
-            return ExecutionResult(intent.id, ResultState.REJECTED, reason="Order explicitly rejected")
+            return ExecutionResult(intent.id, ResultState.REJECTED, reason="Order explicitly rejected", terminal=True)
         return self._parse_result(raw, intent.id)
 
     def _parse_result(self, raw, intent_id):
@@ -66,15 +66,19 @@ class BinanceConnector(SimulatedConnector):
         filled = Decimal(str(raw.get("filled") or 0))
         amount = Decimal(str(raw.get("amount") or 0))
         status = raw.get("status")
+        terminal = {"open": False, "closed": True, "canceled": True,
+                    "rejected": True}.get(status)
         state = {"rejected": ResultState.REJECTED, "open": ResultState.CONFIRMED,
                  "closed": ResultState.CONFIRMED, "canceled": ResultState.CONFIRMED}.get(status, ResultState.UNKNOWN)
         if status == "closed" and (amount <= 0 or filled != amount):
             state = ResultState.UNKNOWN
-        elif 0 < filled < amount:
+            terminal = None
+        elif status in {"open", "canceled", "rejected"} and 0 < filled < amount:
             state = ResultState.PARTIAL
         return ExecutionResult(intent_id, state, str(raw["id"]) if raw.get("id") else None,
                                raw.get("position_id"), filled,
-                               Decimal(str(raw["average"])) if raw.get("average") is not None else None)
+                               Decimal(str(raw["average"])) if raw.get("average") is not None else None,
+                               terminal=terminal)
 
     async def query_order(self, *, intent_id=None, order_id=None):
         self._check_use(Capability.QUERY)

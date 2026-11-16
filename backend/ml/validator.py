@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any
@@ -11,6 +12,7 @@ import pandas as pd
 
 from paper.backtest import replay_signals
 from paper.costs import PaperCostModel
+from config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +25,7 @@ class ValidationMetrics:
     expectancy_pct: float = 0.0
     max_drawdown_pct: float = 0.0
     signals_distribution: dict[str, int] = field(default_factory=dict)
+    open_positions: int = 0
     approved: bool = False
 
 
@@ -49,6 +52,7 @@ class ModelValidator:
         min_quantity: Decimal | None = None,
         max_quantity: Decimal | None = None,
         margin_rate: Decimal | None = None,
+        market_history: pd.DataFrame | None = None,
     ) -> ValidationMetrics:
         """Prediz e simula apenas os sinais executáveis no período de teste."""
         signals = model.predict(X_test)
@@ -63,9 +67,16 @@ class ModelValidator:
         dist = {str(key): int(count) for key, count in zip(unique, counts)}
         logger.info("[validator] Sinais previstos: %s", dist)
 
+        history = market_history if market_history is not None else market_data.iloc[:0]
+        if settings.didi_exit_auto_close and (
+            len(history) < 79 or "volume" not in market_data or "volume" not in history
+        ):
+            raise ValueError("Saída estratégica exige histórico OHLCV anterior suficiente")
+        replay_data = pd.concat([history, market_data], ignore_index=True)
+        replay_predictions = ["NEUTRO"] * len(history) + list(signals)
         replay = replay_signals(
-            market_data,
-            signals,
+            replay_data,
+            replay_predictions,
             forward_candles=forward_candles,
             spread_price=costs.spread_price,
             commission_rate=costs.commission_rate,
@@ -79,6 +90,9 @@ class ModelValidator:
             min_quantity=min_quantity,
             max_quantity=max_quantity,
             margin_rate=margin_rate,
+            rr_target=Decimal(str(settings.didi_rr_target)),
+            safe_break_rr=Decimal(str(settings.didi_safe_break_rr)),
+            auto_close_on_exit=settings.didi_exit_auto_close,
         )
         net = replay["net_metrics_under_project_paper_costs"]
         metrics = ValidationMetrics(
@@ -88,13 +102,23 @@ class ModelValidator:
             expectancy_pct=float(net["expectancy_return_pct"]),
             max_drawdown_pct=float(net["max_drawdown_pct"]),
             signals_distribution=dist,
+            open_positions=int(replay["open_positions"]),
         )
         metrics.approved = self.check_approval(metrics)
         return metrics
 
     def check_approval(self, metrics: ValidationMetrics) -> bool:
-        """Aprova modelo se Profit Factor ≥ 1.3."""
-        approved = metrics.profit_factor >= self.MIN_PROFIT_FACTOR
+        """Aprova somente métricas finitas com Profit Factor ≥ 1.3."""
+        approved = (
+            all(math.isfinite(value) for value in (
+                metrics.profit_factor, metrics.win_rate,
+                metrics.expectancy_pct, metrics.max_drawdown_pct,
+                metrics.total_trades, metrics.open_positions,
+            ))
+            and metrics.total_trades > 0
+            and metrics.profit_factor >= self.MIN_PROFIT_FACTOR
+            and metrics.open_positions == 0
+        )
         logger.info(
             "[validator] PF=%.4f WR=%.1f%% trades=%d → %s",
             metrics.profit_factor,

@@ -182,7 +182,7 @@ def load_fresh_ohlcv(
     *,
     timeframe: str | None = None,
     now: datetime | None = None,
-    limit: int = 300,
+    limit: int | None = 300,
 ) -> pd.DataFrame:
     """Load local data, keep only closed candles and reject stale quotes."""
     tf = normalize_timeframe(timeframe or getattr(settings, "didi_timeframe", "1h"))
@@ -194,7 +194,7 @@ def load_fresh_ohlcv(
         max_age_seconds=int(getattr(settings, "didi_max_quote_age_sec", 7200) or 7200),
         now=now,
     )
-    return closed.tail(limit).reset_index(drop=True)
+    return (closed if limit is None else closed.tail(limit)).reset_index(drop=True)
 
 
 async def latest_mark_price(

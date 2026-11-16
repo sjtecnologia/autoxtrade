@@ -333,12 +333,24 @@ async def test_monitor_runs_without_active_scanner_and_does_not_close_real(monke
     from trading.connectors import factory
     trades = [SimpleNamespace(id=i, mode=mode, market="FOREX", symbol="TEST", side="buy",
                               entry_price=Decimal("100"), stop_loss=Decimal("95"),
-                              take_profit=None, position_id=f"pos-{i}")
+                              take_profit=None, position_id=f"pos-{i}", status="open",
+                              open_at=pd.Timestamp("2026-01-04 07:00", tz="UTC").to_pydatetime(),
+                              paper_monitor_candle_at=None, paper_monitor_timeframe=None)
               for i, mode in [(1, "live"), (2, "paper")]]
     db = AsyncMock()
     result = MagicMock()
     result.scalars.return_value.all.return_value = trades
-    db.execute.return_value = result
+    result.scalar_one_or_none.return_value = trades[1]
+    no_events = MagicMock()
+    no_events.scalar_one_or_none.return_value = None
+
+    async def execute(statement):
+        from db.models import TradeEvent
+
+        entity = statement.column_descriptions[0].get("entity")
+        return no_events if entity is TradeEvent else result
+
+    db.execute.side_effect = execute
     session = MagicMock()
     session.return_value.__aenter__.return_value = db
     engine = AsyncMock()
@@ -350,7 +362,7 @@ async def test_monitor_runs_without_active_scanner_and_does_not_close_real(monke
     monkeypatch.setattr(
         trading_tasks,
         "_load_fresh_ohlcv",
-        lambda *a: pd.DataFrame({
+        lambda *a, **kw: pd.DataFrame({
             "open": [100] * 80, "high": [100] * 80, "low": [100] * 80,
             "close": [100] * 80,
             "timestamp": pd.date_range("2026-01-01", periods=80, freq="h", tz="UTC"),
@@ -369,6 +381,6 @@ async def test_monitor_runs_without_active_scanner_and_does_not_close_real(monke
     await trading_tasks._monitor_open_positions_async()
     closed.assert_awaited_once_with(trades[1], Decimal("100"), "DIDI_EXIT")
     broker.assert_not_called()
-    query = str(db.execute.call_args.args[0])
+    query = str(db.execute.call_args_list[0].args[0])
     assert "bot_config" not in query  # open positions, independent of scanner pause
     assert "trades.status" in query

@@ -86,6 +86,38 @@ def monitor_open_positions() -> None:
     asyncio.run(_monitor_open_positions_async())
 
 
+@shared_task(name="tasks.trading_tasks.recover_paper_protection")
+def recover_paper_protection() -> dict[str, int]:
+    """Recover protection only for persisted simulated paper positions."""
+    return asyncio.run(_recover_paper_protection_async())
+
+
+async def _recover_paper_protection_async() -> dict[str, int]:
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from config import settings
+    from paper.protection_evidence_provider import resolve_protection_evidence_provider
+    from paper.protection_recovery import recover_pending_paper_protection
+
+    # The server selects the single evidence source; without one protection
+    # stays pending instead of falling back to a synthetic quote.
+    try:
+        evidence_provider = resolve_protection_evidence_provider()
+    except Exception:
+        logger.exception(
+            "Provider de evidências de proteção inválido; recuperação paper bloqueada com segurança"
+        )
+        evidence_provider = None
+
+    engine = create_async_engine(settings.database_url)
+    try:
+        return await recover_pending_paper_protection(
+            async_sessionmaker(engine, expire_on_commit=False),
+            evidence_provider=evidence_provider,
+        )
+    finally:
+        await engine.dispose()
+
+
 # ---------------------------------------------------------------------------
 # Guard de horário
 # ---------------------------------------------------------------------------
@@ -437,7 +469,7 @@ async def _process_entry_approvals_async() -> None:
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
     from config import settings
-    from db.models import BotConfig, ExecutionIntent, Trade
+    from db.models import BotConfig, ExecutionIntent, ProtectionAuthority, Trade
     from notifications.templates import format_position_opened
     from notifications.telegram import notifier
     from risk.correlation_checker import CorrelationChecker
@@ -449,7 +481,12 @@ async def _process_entry_approvals_async() -> None:
     from trading.connectors.types import OrderSide
     from trading.contracts import ResultState, context_from_dict
     from trading.order_executor import OrderExecutor
-    from trading.paper_trader import PaperTrader
+    from trading.paper_trader import is_durable_paper_position
+    from paper.durable_effects import DurablePaperEffects
+    from paper.protection_recovery import _recover_one
+    from paper.safe_break import _confirmed_protection
+    from trading.connectors.memory_transport import MemoryTransport
+    from trading.connectors.simulated import SimulatedConnector
 
     svc = EntryApprovalService()
     approved = await svc.pop_approved_entries()
@@ -530,6 +567,7 @@ async def _process_entry_approvals_async() -> None:
                     ):
                         raise ValueError("Approval conflicts with server-side execution binding")
                     intent_status = intent.status
+                    intent_position_id = intent.position_id
                     await db.commit()
 
                 if recovered and mode == "paper":
@@ -540,18 +578,60 @@ async def _process_entry_approvals_async() -> None:
                             )
                         ).scalar_one_or_none()
                         await db.commit()
-                    if existing_trade is not None:
+                    if (existing_trade is not None
+                            and not is_durable_paper_position(existing_trade.position_id)
+                            and not is_durable_paper_position(intent_position_id)):
+                        if intent_status != "confirmed":
+                            logger.error("[didi] Trade paper legado %s requer reconciliação", intent_id)
+                            continue
                         trade = existing_trade
-                    elif expires_at <= datetime.now(timezone.utc):
+                    elif intent_status == "reserved" and existing_trade is not None:
+                        logger.error("[didi] Intent %s reservada já possui Trade; reconciliação exigida", intent_id)
+                        continue
+                    elif intent_status == "reserved" and expires_at <= datetime.now(timezone.utc):
                         await svc.expire_unstarted_claim(approval_id, claim_token)
                         continue
                     elif intent_status != "reserved":
-                        await svc.mark_entry_failed(
-                            approval_id,
-                            f"Paper intent recovery needs reconciliation (status={intent_status})",
-                            claim_token,
+                        async with Session() as db:
+                            authority = (await db.execute(select(ProtectionAuthority).where(
+                                ProtectionAuthority.intent_id == intent_id
+                            ))).scalar_one_or_none()
+                            if authority is None:
+                                logger.error("[didi] Intent %s sem autoridade durável; reserva preservada", intent_id)
+                                continue
+                            execution_context = context_from_dict(authority.execution_context)
+                            await db.commit()
+                        if (execution_context.market != market or execution_context.mode.value != mode
+                                or execution_context.instrument.symbol != symbol):
+                            raise ValueError("Persisted authority conflicts with approval")
+                        effects = DurablePaperEffects(Session, execution_context)
+                        connector = SimulatedConnector(
+                            execution_context, transport=MemoryTransport(execution_context, durable_effects=effects)
                         )
-                        continue
+                        observed = await connector.query_order(intent_id=intent_id)
+                        if observed.state not in {ResultState.CONFIRMED, ResultState.PARTIAL}:
+                            logger.error("[didi] Intent %s sem recibo de entrada conclusivo; reserva preservada", intent_id)
+                            continue
+                        confirmed_protection = False
+                        if existing_trade is not None and intent_status == "confirmed":
+                            async with Session() as db:
+                                locked_intent, locked_trade, authority, position = await effects._locked_protection_state(
+                                    db, "paper_" + intent_id,
+                                )
+                                confirmed_protection = await _confirmed_protection(
+                                    db, effects, locked_intent, locked_trade, authority, position,
+                                )
+                        if not confirmed_protection:
+                            async with Session() as db:
+                                await _recover_one(db, connector, intent_id)
+                        async with Session() as db:
+                            trade = (await db.execute(select(Trade).where(
+                                Trade.intent_id == intent_id
+                            ))).scalar_one_or_none()
+                            await db.commit()
+                        if trade is None:
+                            logger.error("[didi] Intent %s sem Trade recuperado; reserva preservada", intent_id)
+                            continue
 
                 elif recovered:
                     connector = get_connector(execution_context, mode=mode)
@@ -687,7 +767,8 @@ async def _process_entry_approvals_async() -> None:
                             raise ValueError(f"risco_reprovado: {risk_result.reason}")
                         if risk_result.intent_id is None:
                             raise RuntimeError("Risk approval returned without a reservation id")
-                        intent_id = risk_result.intent_id
+                        if risk_result.intent_id != intent_id:
+                            raise RuntimeError("Risk approval changed the durable intent id")
                         max_quantity = risk_result.position_size.quantity
                         if qty <= 0 or qty > max_quantity:
                             raise ValueError(
@@ -697,25 +778,18 @@ async def _process_entry_approvals_async() -> None:
                         await db.commit()
 
                     if mode == "paper":
+                        execution_context.instrument.validate(qty, current_price)
+                        effects = DurablePaperEffects(Session, execution_context)
+                        transport = MemoryTransport(execution_context, durable_effects=effects)
+                        transport.prices[symbol] = current_price
+                        connector = SimulatedConnector(execution_context, transport=transport)
                         async with Session() as db:
-                            trader = PaperTrader(
-                                db, market=market, context=execution_context
+                            trade = await OrderExecutor(connector, db).open_position(
+                                symbol=symbol, side=side, quantity=qty,
+                                entry_price=entry_price, stop_loss=stop_loss,
+                                take_profit=take_profit, model_version="didi-manual",
+                                ml_confidence=None, market=market, intent_id=intent_id,
                             )
-                            try:
-                                await trader.startup()
-                                trade = await trader.open_position(
-                                    symbol=symbol,
-                                    side=side,
-                                    quantity=qty,
-                                    entry_price=entry_price,
-                                    stop_loss=stop_loss,
-                                    take_profit=take_profit,
-                                    model_version="didi-manual",
-                                    ml_confidence=None,
-                                    intent_id=intent_id,
-                                )
-                            finally:
-                                await trader.shutdown()
 
                 if trade is None and mode != "paper":
                     connector = get_connector(execution_context, mode=mode)
@@ -742,7 +816,8 @@ async def _process_entry_approvals_async() -> None:
                 completed = await svc.mark_entry_executed(approval_id, claim_token)
                 if completed is None:
                     logger.critical(
-                        "[didi] Execucao %s persistida, mas o claim expirou antes da conclusao",
+                        "[didi] Aprovação %s pendente: claim inválido ou execução/proteção "
+                        "não comprovada; reserva preservada",
                         approval_id,
                     )
                     continue
@@ -779,7 +854,7 @@ async def _process_entry_approvals_async() -> None:
                         exc,
                         exc_info=True,
                     )
-                elif intent_status in {"confirmed", "partial"}:
+                elif intent_status == "confirmed":
                     async with Session() as db:
                         trade = (
                             await db.execute(
@@ -800,6 +875,12 @@ async def _process_entry_approvals_async() -> None:
                                     approval_id,
                                     notify_exc,
                                 )
+                        else:
+                            logger.critical(
+                                "[didi] Aprovação %s permanece pendente após erro; "
+                                "claim ou resultado durável não comprovado: %s",
+                                approval_id, exc,
+                            )
                 else:
                     await svc.mark_entry_failed(
                         approval_id, str(exc), claim_token
@@ -822,6 +903,411 @@ async def _process_entry_approvals_async() -> None:
         await engine.dispose()
 
 
+async def _execute_durable_paper_stop(Session, trade_id, snapshot, decision) -> None:
+    from datetime import datetime
+    from paper.durable_effects import DurablePaperEffects
+    from trading.connectors.memory_transport import MemoryTransport
+    from trading.connectors.simulated import SimulatedConnector
+    from trading.contracts import context_from_dict
+    from trading.order_executor import OrderExecutionError, OrderExecutor
+    from trading.safety import ExposureBlocked
+    from db.models import Trade
+
+    identity = dict(snapshot)
+    identity.pop("paper_costs", None)
+    try:
+        context = context_from_dict(identity)
+        connector = SimulatedConnector(
+            context, transport=MemoryTransport(context, durable_effects=DurablePaperEffects(Session, context))
+        )
+        async with Session() as db:
+            trade = await db.get(Trade, trade_id)
+            if trade is None:
+                raise OrderExecutionError("Monitor trade not found")
+            await OrderExecutor(connector, db).close_position(
+                trade, reason=decision["reason"], execution_price=Decimal(decision["execution_price"]),
+                candle=datetime.fromisoformat(decision["candle"]),
+                timeframe=decision["timeframe"],
+                previous_cursor=datetime.fromisoformat(decision["cursor"]) if decision["cursor"] else None,
+                previous_timeframe=decision["previous_timeframe"],
+            )
+    except (OrderExecutionError, ExposureBlocked, ValueError, KeyError, TypeError) as exc:
+        logger.error("[paper] Trade %s: fechamento durável pendente: %s", trade_id, exc)
+
+
+async def _stage_durable_paper_close(
+    db, effects, trade, *, reason, price, candle, timeframe, decision_context=None,
+):
+    from uuid import uuid4
+
+    owner = uuid4().hex
+    operation_id, fence, payload = await effects.prepare_manual_close(
+        trade.position_id, trade_id=trade.id, quantity=trade.quantity, reason=reason,
+        execution_price=price, owner=owner, candle=candle, timeframe=timeframe,
+        previous_cursor=trade.paper_monitor_candle_at,
+        previous_timeframe=trade.paper_monitor_timeframe, session=db, decision_context=decision_context,
+    )
+    await effects.release_initial_protection_claim(db, trade.position_id, operation_id, fence, owner)
+    await db.commit()
+    return payload
+
+
+async def _resume_durable_paper_stop(Session, trade_id) -> bool:
+    from sqlalchemy import or_, select
+    from db.models import Trade
+    from paper.durable_effects import PaperProtectionAttempt
+    from trading.paper_trader import is_durable_paper_position
+
+    async with Session() as db:
+        trade = (await db.execute(select(Trade).where(
+            Trade.id == trade_id
+        ).with_for_update())).scalar_one_or_none()
+        if (trade is None or trade.status != "open" or trade.mode != "paper"
+                or not trade.intent_id or not is_durable_paper_position(trade.position_id)):
+            return False
+        pending = (await db.execute(select(PaperProtectionAttempt).where(
+            PaperProtectionAttempt.position_id == trade.position_id,
+            or_(PaperProtectionAttempt.operation_id == f"manual-close:{trade.id}",
+                PaperProtectionAttempt.operation_id.like(f"manual-close:{trade.id}:%")),
+        ))).scalars().all()
+        if not pending:
+            return False
+        if len(pending) != 1 or pending[0].payload.get("candle") is None:
+            logger.error("[paper] Trade %s: fechamento anterior requer reconciliação", trade_id)
+            return True
+        decision, snapshot = dict(pending[0].payload), dict(trade.execution_context or {})
+        await db.rollback()
+    await _execute_durable_paper_stop(Session, trade_id, snapshot, decision)
+    return True
+
+
+async def _resume_durable_safe_break(Session, trade_id, *, evidence_provider=None, evidence_clock=None):
+    from db.models import Trade
+    from notifications.templates import format_safe_break_armed
+    from notifications.telegram import notifier
+    from paper.safe_break import resume_safe_break
+
+    try:
+        resumed = await resume_safe_break(
+            Session, trade_id, evidence_provider=evidence_provider, evidence_clock=evidence_clock,
+        )
+    except Exception as exc:
+        logger.exception("[paper] Trade %s: safe break permanece pendente", trade_id)
+        try:
+            await notifier.send_emergency_alert(
+                f"[paper] Trade {trade_id}: safe break pendente; proteção e reserva preservadas: {exc}"
+            )
+        except Exception:
+            logger.exception("[paper] Falha ao enviar alerta de safe break para trade %s", trade_id)
+        return True, False
+    if resumed:
+        try:
+            async with Session() as db:
+                trade = await db.get(Trade, trade_id)
+                if trade is not None:
+                    await notifier.send_message(format_safe_break_armed(trade))
+        except Exception:
+            logger.exception("[paper] Safe break confirmado, mas notificação falhou para trade %s", trade_id)
+    return resumed, True
+
+
+async def _monitor_paper_candles(
+    Session, trade_id, df, settings, redis_client, *, evidence_provider=None, evidence_clock=None,
+) -> None:
+    """Evaluate closed candles in order, committing each decision under a row lock.
+
+    An overlapping candle's open and extremes may predate entry. Only its close
+    is observable after entry, without an opening-gap adjustment.
+    """
+    import pandas as pd
+    from sqlalchemy import or_, select
+
+    from db.models import Trade, TradeEvent
+    from notifications.templates import format_exit_signal_alert, format_safe_break_armed
+    from notifications.telegram import notifier
+    from trading.didi_strategy import evaluate_exit, evaluate_safe_break, evaluate_paper_stop_target
+    from trading.market_feed import normalize_timeframe, timeframe_seconds
+    from trading.paper_trader import PaperTrader, is_durable_paper_position
+    from trading.safety import ExposureBlocked
+    from paper.durable_effects import PaperProtectionAttempt
+    from paper.safe_break import _confirmed_protection, _effects, executable_safe_break_stop, stage_safe_break
+
+    timeframe = normalize_timeframe(getattr(settings, "didi_timeframe", "1h"))
+    interval = pd.Timedelta(seconds=timeframe_seconds(timeframe))
+    timestamps = pd.to_datetime(df["timestamp"], utc=True)
+
+    while True:
+        _, succeeded = await _resume_durable_safe_break(
+            Session, trade_id, evidence_provider=evidence_provider, evidence_clock=evidence_clock,
+        )
+        if not succeeded:
+            return
+        safe_notice = None
+        exit_notice = None
+        closed = False
+        async with Session() as db:
+            identity = (await db.execute(select(
+                Trade.position_id, Trade.intent_id, Trade.execution_context,
+            ).where(Trade.id == trade_id))).one_or_none()
+            if identity is None:
+                return
+            durable = is_durable_paper_position(identity.position_id) and bool(identity.intent_id)
+            if durable:
+                try:
+                    effects, _ = _effects(Session, dict(identity.execution_context or {}))
+                    intent, trade, authority, position = await effects._locked_protection_state(
+                        db, identity.position_id,
+                    )
+                except (ExposureBlocked, ValueError, KeyError, TypeError) as exc:
+                    logger.error("[paper] Trade %s: identidade durável inválida: %s", trade_id, exc)
+                    return
+            else:
+                trade = (await db.execute(
+                    select(Trade).where(Trade.id == trade_id).with_for_update()
+                )).scalar_one_or_none()
+            if trade is None or trade.id != trade_id or trade.status != "open" or trade.mode != "paper":
+                return
+            if durable:
+                pending = (await db.execute(select(PaperProtectionAttempt).where(
+                    PaperProtectionAttempt.position_id == trade.position_id,
+                    or_(PaperProtectionAttempt.operation_id == f"manual-close:{trade.id}",
+                        PaperProtectionAttempt.operation_id.like(f"manual-close:{trade.id}:%")),
+                ))).scalars().all()
+                if pending:
+                    if len(pending) != 1 or pending[0].payload.get("candle") is None:
+                        logger.error("[paper] Trade %s: fechamento anterior requer reconciliação", trade_id)
+                        return
+                    decision, snapshot = dict(pending[0].payload), dict(trade.execution_context or {})
+                    await db.rollback()
+                    await _execute_durable_paper_stop(Session, trade_id, snapshot, decision)
+                    return
+                if not await _confirmed_protection(db, effects, intent, trade, authority, position):
+                    logger.critical("[paper] Trade %s: proteção atual não confirmada; cursor bloqueado", trade_id)
+                    await db.rollback()
+                    await notifier.send_emergency_alert(
+                        f"[paper] Trade {trade_id}: proteção atual não confirmada; reserva preservada."
+                    )
+                    return
+
+            opened = pd.Timestamp(trade.open_at)
+            opened = opened.tz_localize("UTC") if opened.tzinfo is None else opened.tz_convert("UTC")
+            cursor = trade.paper_monitor_candle_at
+            if cursor is not None:
+                if trade.paper_monitor_timeframe != timeframe:
+                    logger.error("[paper] Trade %s: timeframe do cursor mudou; decisão bloqueada", trade_id)
+                    return
+                cursor_ts = pd.Timestamp(cursor)
+                cursor_ts = cursor_ts.tz_localize("UTC") if cursor_ts.tzinfo is None else cursor_ts.tz_convert("UTC")
+                candidates = timestamps[timestamps > cursor_ts]
+                expected = cursor_ts + interval
+            else:
+                previous_safe_break = (await db.execute(
+                    select(TradeEvent.id).where(
+                        TradeEvent.trade_id == trade_id,
+                        TradeEvent.event_type == "SAFE_BREAK_ARMED",
+                    ).limit(1)
+                )).scalar_one_or_none()
+                if previous_safe_break is not None:
+                    logger.error(
+                        "[paper] Trade %s: safe break anterior sem cursor; "
+                        "reconciliação manual necessária antes de retomar",
+                        trade_id,
+                    )
+                    return
+                candidates = timestamps[timestamps + interval > opened]
+                expected = None
+
+            if candidates.empty:
+                return
+            idx = candidates.index[0]
+            timestamp = timestamps.loc[idx]
+            if (expected is not None and timestamp != expected) or (
+                expected is None and timestamp > opened
+            ):
+                logger.error(
+                    "[paper] Trade %s: lacuna de candles antes de %s; cursor não avançado",
+                    trade_id, timestamp,
+                )
+                return
+
+            bar = df.loc[idx]
+            overlap = timestamp < opened
+            try:
+                close = Decimal(str(bar["close"]))
+                bar_open = close if overlap else Decimal(str(bar["open"]))
+                high = close if overlap else Decimal(str(bar["high"]))
+                low = close if overlap else Decimal(str(bar["low"]))
+                if any(not value.is_finite() or value <= 0 for value in (bar_open, high, low, close)):
+                    raise ValueError("preço inválido")
+                if not overlap and (low > min(bar_open, close) or high < max(bar_open, close)):
+                    raise ValueError("OHLC inconsistente")
+            except (KeyError, ValueError, ArithmeticError) as exc:
+                logger.error("[paper] Trade %s: candle inválido em %s: %s", trade_id, timestamp, exc)
+                return
+
+            is_buy = trade.side == "buy"
+            stop_target = evaluate_paper_stop_target(
+                "buy" if is_buy else "sell", trade.stop_loss, trade.take_profit,
+                bar_open, high, low,
+            )
+            if stop_target is not None:
+                reason, exit_price = stop_target
+                if is_durable_paper_position(trade.position_id):
+                    if not durable:
+                        logger.critical("[paper] Trade %s: identidade durável não resolvida", trade_id)
+                        return
+                    snapshot = dict(trade.execution_context or {})
+                    try:
+                        decision = await _stage_durable_paper_close(
+                            db, effects, trade, reason=reason, price=exit_price,
+                            candle=timestamp.to_pydatetime(), timeframe=timeframe,
+                        )
+                    except (ValueError, ExposureBlocked) as exc:
+                        await db.rollback()
+                        logger.error("[paper] Trade %s: decisão de fechamento bloqueada: %s", trade_id, exc)
+                        return
+                    await _execute_durable_paper_stop(Session, trade_id, snapshot, decision)
+                    return
+                trade.paper_monitor_candle_at = timestamp.to_pydatetime()
+                trade.paper_monitor_timeframe = timeframe
+                await PaperTrader(db, market=trade.market)._close_position(trade, exit_price, reason)
+                logger.info("[paper] %s %s fechado por %s no candle %s", trade.symbol, trade.side, reason, timestamp)
+                closed = True
+            else:
+                # The overlapping candle's indicators depend on pre-entry extremes.
+                exit_eval = None if overlap else evaluate_exit(
+                    df.loc[:idx], "buy" if is_buy else "sell"
+                )
+                if (exit_eval is not None and exit_eval.should_exit
+                        and settings.didi_exit_auto_close
+                        and is_durable_paper_position(trade.position_id)):
+                    if not durable:
+                        logger.critical("[paper] Trade %s: identidade durável não resolvida", trade_id)
+                        return
+                    snapshot = dict(trade.execution_context or {})
+                    try:
+                        decision = await _stage_durable_paper_close(
+                            db, effects, trade, reason="DIDI_EXIT", price=close,
+                            candle=timestamp.to_pydatetime(), timeframe=timeframe,
+                            decision_context={
+                                "candle": {
+                                    "open": str(bar_open), "high": str(high), "low": str(low),
+                                    "close": str(close),
+                                    "volume": str(bar["volume"]) if "volume" in bar else None,
+                                },
+                                "criteria": dict(exit_eval.criteria),
+                                "details": dict(exit_eval.details),
+                            },
+                        )
+                    except (ValueError, ExposureBlocked) as exc:
+                        await db.rollback()
+                        logger.error("[paper] Trade %s: saída estratégica bloqueada: %s", trade_id, exc)
+                        return
+                    await _execute_durable_paper_stop(Session, trade_id, snapshot, decision)
+                    return
+                safe = evaluate_safe_break(
+                    side="buy" if is_buy else "sell",
+                    entry_price=trade.entry_price,
+                    stop_loss=trade.stop_loss,
+                    current_price=close,
+                    trigger_rr=Decimal(str(settings.didi_safe_break_rr)),
+                )
+                if safe.should_move:
+                    if is_durable_paper_position(trade.position_id):
+                        if not durable:
+                            logger.critical("[paper] Trade %s: identidade durável não resolvida", trade_id)
+                            return
+                        snapshot = dict(trade.execution_context or {})
+                        try:
+                            executable_stop = executable_safe_break_stop(
+                                snapshot, trade.side, trade.quantity, safe.new_stop_loss,
+                            )
+                        except (ExposureBlocked, ValueError, ArithmeticError, KeyError, TypeError) as exc:
+                            logger.error("[paper] Trade %s: stop de safe break inválido: %s", trade_id, exc)
+                            await db.rollback()
+                            await notifier.send_emergency_alert(
+                                f"[paper] Trade {trade_id}: stop de safe break inválido: {exc}"
+                            )
+                            return
+                        decision = dict(
+                            position_id=trade.position_id, candle_at=timestamp.to_pydatetime(),
+                            timeframe=timeframe, interval_seconds=int(interval.total_seconds()),
+                            previous_cursor=cursor, previous_timeframe=trade.paper_monitor_timeframe,
+                            old_stop=trade.stop_loss, new_stop=executable_stop,
+                            take_profit=trade.take_profit, entry_price=trade.entry_price,
+                            quantity=trade.quantity, levels_version=authority.version,
+                            entry_revision=intent.observation_revision,
+                            candle={"open": str(bar_open), "high": str(high), "low": str(low),
+                                    "close": str(close), "trigger_rr": str(settings.didi_safe_break_rr)},
+                        )
+                        await db.rollback()
+                        try:
+                            staged = await stage_safe_break(Session, trade_id, snapshot, **decision)
+                        except Exception as exc:
+                            logger.exception("[paper] Trade %s: decisão de safe break bloqueada", trade_id)
+                            await notifier.send_emergency_alert(
+                                f"[paper] Trade {trade_id}: decisão de safe break bloqueada: {exc}"
+                            )
+                            return
+                        if not staged:
+                            return
+                        continue
+                    trade.stop_loss = safe.new_stop_loss
+                    db.add(TradeEvent(
+                        trade=trade,
+                        event_type="SAFE_BREAK_ARMED",
+                        payload={"new_stop_loss": str(safe.new_stop_loss)},
+                    ))
+                    safe_notice = trade
+
+                trade.paper_monitor_candle_at = timestamp.to_pydatetime()
+                trade.paper_monitor_timeframe = timeframe
+                if exit_eval is not None and exit_eval.should_exit:
+                    exit_notice = (trade, exit_eval.criteria, exit_eval.details)
+                    if settings.didi_exit_auto_close:
+                        await PaperTrader(db, market=trade.market)._close_position(trade, close, "DIDI_EXIT")
+                        closed = True
+                if not closed:
+                    await db.commit()
+
+        if safe_notice is not None:
+            await notifier.send_message(format_safe_break_armed(safe_notice))
+        if exit_notice is not None:
+            dedupe_key = f"alert:exit:{trade_id}"
+            if not await redis_client.get(dedupe_key):
+                await redis_client.setex(dedupe_key, 900, "1")
+                await notifier.send_message(format_exit_signal_alert(*exit_notice))
+        if closed:
+            return
+
+
+async def _alert_legacy_paper_cursors(Session, redis_client, notifier) -> None:
+    from redis.exceptions import RedisError
+    from trading.paper_cursor_reconciliation import list_blocked_paper_cursors
+
+    for blocked in await list_blocked_paper_cursors(Session):
+        message = (
+            f"[paper] Trade {blocked.trade_id} bloqueado: safe break legado sem cursor. "
+            "Execute python -m trading.paper_cursor_reconciliation list e registre "
+            "uma decisão com o comando record; o monitor permanece bloqueado."
+        )
+        logger.error(message)
+        key = f"alert:paper-cursor:{blocked.trade_id}:{blocked.safe_break_event_id}"
+        try:
+            already_sent = await redis_client.get(key)
+        except RedisError:
+            logger.exception("[paper] Cache de alerta indisponível para trade %s", blocked.trade_id)
+            already_sent = None
+        if not already_sent:
+            if await notifier.send_message(message):
+                try:
+                    await redis_client.setex(key, 3600, "1")
+                except RedisError:
+                    logger.exception("[paper] Falha ao registrar cache de alerta %s", blocked.trade_id)
+            else:
+                logger.error("[paper] Alerta não entregue para trade %s", blocked.trade_id)
+
+
 async def _monitor_open_positions_async() -> None:
     from sqlalchemy import select
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -835,56 +1321,41 @@ async def _monitor_open_positions_async() -> None:
     from trading.connectors.factory import get_connector
     from trading.contracts import ResultState
     from trading.didi_strategy import evaluate_exit, evaluate_safe_break
-    from trading.order_executor import OrderExecutor
-    from trading.paper_trader import PaperTrader
+    from trading.paper_trader import is_durable_paper_position
 
     engine = create_async_engine(settings.database_url)
     Session = async_sessionmaker(engine, expire_on_commit=False)
     redis_client = aioredis.from_url(settings.redis_url, decode_responses=True)
 
     try:
+        await _alert_legacy_paper_cursors(Session, redis_client, notifier)
         async with Session() as db:
             result = await db.execute(select(Trade).where(Trade.status == "open"))
             open_trades = result.scalars().all()
+            await db.commit()
 
             for trade in open_trades:
+                if (trade.mode == "paper" and is_durable_paper_position(trade.position_id)
+                        and await _resume_durable_paper_stop(Session, trade.id)):
+                    continue
+                if trade.mode == "paper" and is_durable_paper_position(trade.position_id):
+                    resumed, succeeded = await _resume_durable_safe_break(Session, trade.id)
+                    if resumed or not succeeded:
+                        continue
                 # Monitoramento de stops também decide apenas com candles
                 # fechados e frescos; dado indisponível bloqueia a decisão.
-                df = _load_fresh_ohlcv(trade.symbol, trade.market, settings)
-                if df is None or len(df) < 80:
+                df = _load_fresh_ohlcv(
+                    trade.symbol, trade.market, settings,
+                    limit=None if trade.mode == "paper" else 300,
+                )
+                if df is None or df.empty:
                     continue
 
                 if trade.mode == "paper":
-                    bar = df.iloc[-1]
-                    is_buy = trade.side == "buy"
-                    hit_stop = (
-                        float(bar["low"]) <= float(trade.stop_loss)
-                        if is_buy else float(bar["high"]) >= float(trade.stop_loss)
-                    )
-                    hit_target = bool(trade.take_profit) and (
-                        float(bar["high"]) >= float(trade.take_profit)
-                        if is_buy else float(bar["low"]) <= float(trade.take_profit)
-                    )
-                    if hit_stop or hit_target:
-                        # OHLC não revela qual nível foi tocado primeiro; assume SL.
-                        reason = "SL_HIT" if hit_stop else "TP_HIT"
-                        bar_open = Decimal(str(bar["open"]))
-                        exit_price = trade.stop_loss if hit_stop else trade.take_profit
-                        if is_buy and hit_stop and bar_open < exit_price:
-                            exit_price = bar_open
-                        elif is_buy and hit_target and bar_open > exit_price:
-                            exit_price = bar_open
-                        elif not is_buy and hit_stop and bar_open > exit_price:
-                            exit_price = bar_open
-                        elif not is_buy and hit_target and bar_open < exit_price:
-                            exit_price = bar_open
-                        paper_trader = PaperTrader(db, market=trade.market)
-                        await paper_trader._close_position(trade, exit_price, reason)
-                        logger.info(
-                            "[paper] %s %s fechado por %s no candle %s",
-                            trade.symbol, trade.side, reason, bar.get("timestamp"),
-                        )
-                        continue
+                    await _monitor_paper_candles(Session, trade.id, df, settings, redis_client)
+                    continue
+                if len(df) < 80:
+                    continue
 
                 current_price = Decimal(str(df["close"].iloc[-1]))
                 safe_eval = evaluate_safe_break(
@@ -961,17 +1432,9 @@ async def _monitor_open_positions_async() -> None:
                 if not settings.didi_exit_auto_close:
                     continue
 
-                if trade.mode == "paper":
-                    trader = PaperTrader(db, market=trade.market)
-                    await trader.startup()
-                    try:
-                        await trader._close_position(trade, current_price, "DIDI_EXIT")
-                    finally:
-                        await trader.shutdown()
-                else:
-                    # Keep monitoring other positions. Never claim a real close or
-                    # silently resolve it to paper while management is unvalidated.
-                    logger.error("[safety] Real close blocked for trade %s: management adapter unvalidated", trade.id)
+                # Never claim a real close or resolve it to paper while
+                # management is unvalidated.
+                logger.error("[safety] Real close blocked for trade %s: management adapter unvalidated", trade.id)
     finally:
         await redis_client.aclose()
         await engine.dispose()
@@ -1129,7 +1592,9 @@ def _load_ohlcv(symbol: str, market: str, settings) -> "pd.DataFrame | None":  #
         return None
 
 
-def _load_fresh_ohlcv(symbol: str, market: str, settings) -> "pd.DataFrame | None":  # type: ignore[name-defined]
+def _load_fresh_ohlcv(
+    symbol: str, market: str, settings, *, limit: int | None = 300
+) -> "pd.DataFrame | None":  # type: ignore[name-defined]
     """Candles fechados e frescos para decisões; indisponibilidade bloqueia a decisão.
 
     Reusa trading.market_feed.load_fresh_ohlcv: filtra o candle em formação,
@@ -1138,7 +1603,7 @@ def _load_fresh_ohlcv(symbol: str, market: str, settings) -> "pd.DataFrame | Non
     from trading.market_feed import MarketDataUnavailable, load_fresh_ohlcv
 
     try:
-        return load_fresh_ohlcv(symbol, market, settings)
+        return load_fresh_ohlcv(symbol, market, settings, limit=limit)
     except MarketDataUnavailable as exc:
         logger.warning(
             "[data] %s %s sem candle fechado/fresco; decisão bloqueada: %s",
