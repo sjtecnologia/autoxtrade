@@ -44,6 +44,8 @@ async def effect_sessions(approval_database):
         await conn.execute(text(migration["RECEIPT_TRIGGER"]))
         migration = run_path(str(Path(__file__).parents[2] / "alembic/versions/018_immutable_paper_entry_request.py"))
         await conn.execute(text(migration["RECEIPT_TRIGGER"]))
+        migration = run_path(str(Path(__file__).parents[2] / "alembic/versions/019_partial_stop_cancellation.py"))
+        await conn.execute(text(migration["RECEIPT_TRIGGER"]))
         migration = run_path(str(Path(__file__).parents[2] / "alembic/versions/015_paper_entry_fills.py"))
         await conn.execute(text(migration["IMMUTABLE_FUNCTION"]))
         await conn.execute(text("""

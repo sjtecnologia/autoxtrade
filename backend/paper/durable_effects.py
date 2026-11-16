@@ -337,6 +337,15 @@ class DurablePaperEffects:
                 operation = await db.get(PaperEffectOperation, (self._account_key, position_id, "entry:" + intent_id))
                 if operation is None or operation.payload.get("kind") != "entry":
                     raise ValueError("Entry receipt not found")
+                cancelled = (await db.execute(select(PaperEffectOperation.operation_id).where(
+                    PaperEffectOperation.account_key == self._account_key,
+                    PaperEffectOperation.position_id == position_id,
+                    PaperEffectOperation.payload["kind"].astext == "cancel-entry-stop",
+                ))).first()
+                if cancelled and (revision != operation.result["revision"]
+                                  or filled != Decimal(operation.result["filled"])
+                                  or average != Decimal(operation.result["average"]) or not terminal):
+                    raise ValueError("Entry cancelled by stop; new observations are rejected")
                 old = operation.result
                 old_filled = Decimal(old["filled"])
                 requested = Decimal(operation.payload["quantity"])
@@ -576,6 +585,13 @@ class DurablePaperEffects:
         async with self._sessions() as db:
             async with db.begin():
                 intent, trade, authority, position = await self._locked_protection_state(db, position_id)
+                pending_stop = (await db.execute(select(PaperProtectionAttempt.operation_id).where(
+                    PaperProtectionAttempt.account_key == self._account_key,
+                    PaperProtectionAttempt.position_id == position_id,
+                    PaperProtectionAttempt.operation_id.like("partial-stop:%"),
+                ))).first()
+                if pending_stop:
+                    raise ValueError("Partial stop must be recovered before protection")
                 payload.update(intent_id=authority.intent_id, identity=self._snapshot(),
                                levels_version=authority.version)
                 if (authority.stop_loss != stop_loss or authority.take_profit != take_profit):
@@ -879,7 +895,12 @@ class DurablePaperEffects:
                     if existing is None and not await _confirmed_protection(
                         db, self, intent, trade, authority, position
                     ):
-                        raise ValueError("Current protection must be confirmed before a candle close")
+                        from paper.partial_stop import cancelled_stop_authorizes_close
+                        if not await cancelled_stop_authorizes_close(
+                            db, self, intent, trade, authority, position,
+                            reason=reason, price=execution_price, candle=candle, timeframe=timeframe,
+                        ):
+                            raise ValueError("Current protection must be confirmed before a candle close")
                 if decision_context is None and existing is not None:
                     decision_context = existing.payload.get("decision_context")
                 if decision_context is not None:
@@ -900,6 +921,14 @@ class DurablePaperEffects:
                             or not all(isinstance(key, str) and isinstance(value, str)
                                        for key, value in details.items())):
                         raise ValueError("Invalid strategic decision context")
+                from paper.partial_stop import decision_for, cancelled_stop_authorizes_close
+                partial_stop = await decision_for(db, self, position_id, trade_id)
+                if partial_stop is not None and existing is None:
+                    if candle is None or not await cancelled_stop_authorizes_close(
+                        db, self, intent, trade, authority, position,
+                        reason=reason, price=execution_price, candle=candle, timeframe=timeframe,
+                    ):
+                        raise ValueError("Persisted partial stop owns the close decision")
                 costs = (trade.execution_context or {}).get("paper_costs")
                 try:
                     if not isinstance(costs, dict):

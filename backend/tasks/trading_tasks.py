@@ -952,7 +952,20 @@ async def _stage_durable_paper_close(
     return payload
 
 
+async def _resume_durable_partial_stop(Session, trade_id) -> bool:
+    from paper.partial_stop import resume_partial_stop
+    try:
+        if await resume_partial_stop(Session, trade_id):
+            return True
+    except (ValueError, RuntimeError, OSError) as exc:
+        logger.error("[paper] Trade %s: cancelamento/fechamento parcial pendente: %s", trade_id, exc)
+        return True
+    return False
+
+
 async def _resume_durable_paper_stop(Session, trade_id) -> bool:
+    if await _resume_durable_partial_stop(Session, trade_id):
+        return True
     from sqlalchemy import or_, select
     from db.models import Trade
     from paper.durable_effects import PaperProtectionAttempt
@@ -1037,6 +1050,8 @@ async def _monitor_paper_candles(
     timestamps = pd.to_datetime(df["timestamp"], utc=True)
 
     while True:
+        if await _resume_durable_partial_stop(Session, trade_id):
+            return
         _, succeeded = await _resume_durable_safe_break(
             Session, trade_id, evidence_provider=evidence_provider, evidence_clock=evidence_clock,
         )
@@ -1157,6 +1172,20 @@ async def _monitor_paper_candles(
                         logger.critical("[paper] Trade %s: identidade durável não resolvida", trade_id)
                         return
                     snapshot = dict(trade.execution_context or {})
+                    if intent.order_terminal is not True:
+                        from paper.partial_stop import stage_partial_stop, resume_partial_stop
+                        try:
+                            await stage_partial_stop(
+                                db, effects, intent, trade, authority, position,
+                                reason=reason, price=exit_price,
+                                candle=timestamp.to_pydatetime(), timeframe=timeframe,
+                            )
+                            await db.commit()
+                            await resume_partial_stop(Session, trade_id)
+                        except (ValueError, RuntimeError, OSError) as exc:
+                            await db.rollback()
+                            logger.error("[paper] Trade %s: stop parcial pendente: %s", trade_id, exc)
+                        return
                     try:
                         decision = await _stage_durable_paper_close(
                             db, effects, trade, reason=reason, price=exit_price,
