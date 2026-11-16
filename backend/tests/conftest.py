@@ -1,0 +1,257 @@
+"""Isolation is installed before test collection (including import-time effects)."""
+import fcntl
+import hashlib
+import ipaddress
+import json
+import os
+from pathlib import Path
+import socket
+import sys
+import tempfile
+from contextvars import ContextVar
+
+import pytest
+
+_ROOT = Path(tempfile.mkdtemp(prefix="autoxtrade-tests-" )).resolve()
+tempfile.tempdir = str(_ROOT)
+_violations = []
+_socketpair_setup = ContextVar("socketpair_setup", default=False)
+_original_socketpair = socket.socketpair
+
+
+def _local_socketpair(*args, **kwargs):
+    token = _socketpair_setup.set(True)
+    try:
+        return _original_socketpair(*args, **kwargs)
+    finally:
+        _socketpair_setup.reset(token)
+
+
+socket.socketpair = _local_socketpair
+
+
+def _deny(message):
+    _violations.append(message)
+    raise RuntimeError(message)
+
+
+def _resolve_audit_path(args):
+    path = Path(os.fsdecode(args[0]))
+    if path.is_absolute():
+        return path.resolve()
+    if len(args) > 1 and isinstance(args[1], int) and args[1] >= 0:
+        if hasattr(fcntl, "F_GETPATH"):
+            try:
+                fd_path = fcntl.fcntl(args[1], fcntl.F_GETPATH, b"\0" * 1024).split(b"\0", 1)[0]
+                return (Path(os.fsdecode(fd_path)) / path).resolve()
+            except OSError:
+                pass
+        for fd_root in ("/dev/fd", "/proc/self/fd"):
+            try:
+                return (Path(os.readlink(f"{fd_root}/{args[1]}")) / path).resolve()
+            except OSError:
+                pass
+    return path.resolve()
+
+
+def _audit(event, args):
+    if event in {"socket.connect", "socket.sendto"}:
+        address = args[-1]
+        # No implicit permission for localhost databases/Redis either.
+        allowed = os.environ.get("AUTOXTRADE_TEST_ENDPOINTS", "").split(",")
+        if isinstance(address, tuple):
+            host, port = address[:2]
+            try:
+                local = ipaddress.ip_address(host).is_loopback
+            except ValueError:
+                local = False
+            if local and _socketpair_setup.get():
+                return  # asyncio's private Windows wakeup pair, not a service
+            if local and f"{host}:{port}" in allowed:
+                return
+        _deny("Test attempted network access outside explicit local test endpoints")
+    if event == "socket.getaddrinfo":
+        host = args[0]
+        if host not in ("localhost", "127.0.0.1", "::1", None):
+            _deny("Test attempted external DNS")
+    path_events = {"open", "os.listdir", "os.scandir", "os.mkdir", "os.remove", "os.rmdir", "os.rename"}
+    if event in path_events and isinstance(args[0], (str, bytes, os.PathLike)):
+        path = _resolve_audit_path(args)
+        if path.name == ".env" or path.name.startswith(".env.") and path.name != ".env.example":
+            _deny("Test attempted to read environment secrets")
+        operational = any(p.lower() in {"dwx", "mql5"} for p in path.parts) or path.name.startswith("DWX_")
+        if operational and not path.is_relative_to(_ROOT):
+            _deny("Test attempted operational DWX access")
+        if event == "open" and path.suffix.lower() in {".pkl", ".pickle", ".joblib"} and not path.is_relative_to(_ROOT):
+            _deny("Test attempted untrusted model access")
+    if event in {"subprocess.Popen", "os.system"}:
+        # CCXT's bundled toolz probes its version using this read-only command.
+        if event == "subprocess.Popen" and (
+            args[1] in (
+                "git rev-parse --git-dir", "git.cmd rev-parse --git-dir", "git.exe rev-parse --git-dir",
+                ["git", "rev-parse", "--git-dir"], ["git.cmd", "rev-parse", "--git-dir"],
+                ["git", "rev-parse", "HEAD"], ["git.cmd", "rev-parse", "HEAD"],
+                ["git.exe", "rev-parse", "HEAD"],
+                ["git", "rev-list", "HEAD", "--count"], ["git.cmd", "rev-list", "HEAD", "--count"],
+                ["git.exe", "rev-list", "HEAD", "--count"],
+                ["git", "show", "-s", "--format=%ci", "HEAD"],
+                ["git.cmd", "show", "-s", "--format=%ci", "HEAD"],
+                ["git.exe", "show", "-s", "--format=%ci", "HEAD"],
+            )
+            or (
+                isinstance(args[1], (list, tuple))
+                and len(args[1]) >= 2
+                and args[1][0] in ("git", "git.cmd", "git.exe")
+                and args[1][1] == "describe"
+            )
+        ):
+            return
+        _deny("Test attempted a subprocess outside the isolation boundary")
+
+
+sys.addaudithook(_audit)
+
+# Do not let process environment or .env provide credentials to collected modules.
+import pydantic_settings
+pydantic_settings.BaseSettings.model_config["env_file"] = None
+os.environ.update({
+    "APP_ENV": "test",
+    "API_SECRET_TOKEN": "test-only-token",
+    "DATABASE_URL": "postgresql+asyncpg://test:test@127.0.0.1:15432/autoxtrade_test",
+    "DATABASE_URL_SYNC": "postgresql://test:test@127.0.0.1:15432/autoxtrade_test",
+    "REDIS_URL": "redis://127.0.0.1:16379/15",
+    "CELERY_BROKER_URL": "memory://", "CELERY_RESULT_BACKEND": "cache+memory://",
+    "BINANCE_API_KEY": "", "BINANCE_API_SECRET": "", "BINANCE_PAPER_MODE": "true",
+    # Test fixtures exercise simulated execution; production default remains fail-closed.
+    "PAPER_NEW_EXPOSURE_ENABLED": "true",
+    # RiskManager sizes paper entries from the isolated ledger's explicit seed capital.
+    "PAPER_INITIAL_CAPITAL": "10000",
+    "PAPER_COSTS_JSON": json.dumps({
+        "BTC/USDT": {"spread_price": "0.001", "commission_rate": "0.001", "slippage_price": "0"},
+        "EURUSD": {"spread_price": "0.001", "commission_rate": "0.001", "slippage_price": "0"},
+        "TEST": {"spread_price": "0.001", "commission_rate": "0.001", "slippage_price": "0"},
+    }),
+    "PAPER_QUALIFICATION_PATH": str(_ROOT / "paper-qualification.json"),
+    "DIDI_TIMEFRAME": "1h", "DIDI_ENTRY_ADX_MIN": "23",
+    "DIDI_RR_TARGET": "2", "DIDI_SAFE_BREAK_RR": "1",
+    "TELEGRAM_BOT_TOKEN": "", "TELEGRAM_CHAT_ID": "",
+    "MT5_FILES_DIR": str(_ROOT / "mt5"), "REAL_NEW_EXPOSURE_ENABLED": "false",
+})
+_test_costs = json.loads(os.environ["PAPER_COSTS_JSON"])
+_backend_root = Path(__file__).resolve().parents[1]
+# Use the production fingerprint implementation; never maintain a weaker test list.
+from paper.fingerprint import code_fingerprint
+_test_fingerprint = code_fingerprint(_backend_root)
+_qualification_fixture = {
+    "created_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+    "strategy_sha256": _test_fingerprint,
+    "strategy_parameters": {
+        "timeframe": "1h", "adx_min": 23.0, "rr_target": 2.0,
+        "safe_break_rr": 1.0, "momentum_confirmation": False,
+        "exit_auto_close": False,
+    },
+    "thresholds": {
+        "min_trades_per_fold": 30, "min_win_rate_pct": 48.0,
+        "min_profit_factor": 1.30, "min_expectancy_return_pct": 0.01,
+        "max_drawdown_pct": 20.0, "max_data_age_days": 30,
+    },
+    "costs_by_symbol": _test_costs,
+    "symbols": {
+        symbol: {
+            "qualified": True, "data_age_days": 0,
+            "data_end": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+            "folds": [{"checks": {"min_trades": True, "win_rate": True,
+                                      "profit_factor": True, "expectancy": True,
+                                      "drawdown": True}} for _ in range(2)],
+        }
+        for symbol in _test_costs
+    },
+}
+Path(os.environ["PAPER_QUALIFICATION_PATH"]).write_text(
+    json.dumps(_qualification_fixture), encoding="utf-8"
+)
+# Patch the dotenv source itself: Settings overrides BaseSettings.model_config.
+from pydantic_settings.sources import DotEnvSettingsSource
+DotEnvSettingsSource._read_env_files = lambda self: {}
+
+
+def pytest_configure(config):
+    config.option.basetemp = str(_ROOT / "pytest")
+
+
+@pytest.fixture(autouse=True)
+def enforce_isolation(monkeypatch):
+    previous_count = len(_violations)
+    from telegram import Bot
+    async def forbidden(*args, **kwargs):
+        _deny("Test attempted Telegram transport")
+    monkeypatch.setattr(Bot, "_post", forbidden)
+    yield
+    assert len(_violations) == previous_count, "Isolation violations (even if swallowed): " + repr(_violations[previous_count:])
+
+
+def pytest_sessionfinish(session, exitstatus):
+    if _violations:
+        session.exitstatus = 1
+
+
+class _RiskResult:
+    def __init__(self, value=None, values=None):
+        self._value = value
+        self._values = values or []
+
+    def scalar_one_or_none(self):
+        return self._value
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return self._values
+
+
+class _RiskTransaction:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return False
+
+
+class _RiskSession:
+    def __init__(self, config, trades=(), intents=()):
+        self.config = config
+        self.trades = list(trades)
+        self.intents = list(intents)
+        self.added = []
+        self.execute_calls = []
+
+    async def execute(self, statement):
+        from db.models import BotConfig, ExecutionIntent, RiskAccountLock, Trade
+
+        self.execute_calls.append(statement)
+        descriptions = getattr(statement, "column_descriptions", [])
+        entity = descriptions[0].get("entity") if descriptions else None
+        if entity is BotConfig:
+            return _RiskResult(self.config)
+        if entity is Trade:
+            return _RiskResult(values=self.trades)
+        if entity is ExecutionIntent:
+            return _RiskResult(values=self.intents)
+        if entity is RiskAccountLock:
+            return _RiskResult()
+        return _RiskResult()
+
+    def add(self, value):
+        self.added.append(value)
+
+    def begin(self):
+        return _RiskTransaction()
+
+    async def commit(self):
+        return None
+
+
+@pytest.fixture
+def risk_session():
+    return _RiskSession

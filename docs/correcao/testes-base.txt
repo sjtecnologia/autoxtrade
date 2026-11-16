@@ -1,0 +1,157 @@
+FFFFFFFF..........FFF...............F....................F.....F........ [ 93%]
+.....                                                                    [100%]
+================================== FAILURES ===================================
+___________________ TestSessionFeature.test_abertura_hour_9 ___________________
+.correcao-runtime\baseline\backend\tests\unit\test_b3_feature_engineer.py:44: in test_abertura_hour_9
+    df = engineer.calculate_features(sample_df)
+.correcao-runtime\baseline\backend\ml\b3_feature_engineer.py:92: in calculate_features
+    df = super().calculate_features(df)
+.correcao-runtime\baseline\backend\ml\feature_engineer.py:63: in calculate_features
+    raise ImportError("pandas-ta n�o instalado. Execute: pip install pandas-ta")
+E   ImportError: pandas-ta n�o instalado. Execute: pip install pandas-ta
+________________ TestSessionFeature.test_session_columns_exist ________________
+.correcao-runtime\baseline\backend\tests\unit\test_b3_feature_engineer.py:49: in test_session_columns_exist
+    df = engineer.calculate_features(sample_df)
+.correcao-runtime\baseline\backend\ml\b3_feature_engineer.py:92: in calculate_features
+    df = super().calculate_features(df)
+.correcao-runtime\baseline\backend\ml\feature_engineer.py:63: in calculate_features
+    raise ImportError("pandas-ta n�o instalado. Execute: pip install pandas-ta")
+E   ImportError: pandas-ta n�o instalado. Execute: pip install pandas-ta
+__________________ TestSessionFeature.test_session_exclusive __________________
+.correcao-runtime\baseline\backend\tests\unit\test_b3_feature_engineer.py:55: in test_session_exclusive
+    df = engineer.calculate_features(sample_df)
+.correcao-runtime\baseline\backend\ml\b3_feature_engineer.py:92: in calculate_features
+    df = super().calculate_features(df)
+.correcao-runtime\baseline\backend\ml\feature_engineer.py:63: in calculate_features
+    raise ImportError("pandas-ta n�o instalado. Execute: pip install pandas-ta")
+E   ImportError: pandas-ta n�o instalado. Execute: pip install pandas-ta
+________________ TestSessionFeature.test_session_values_binary ________________
+.correcao-runtime\baseline\backend\tests\unit\test_b3_feature_engineer.py:61: in test_session_values_binary
+    df = engineer.calculate_features(sample_df)
+.correcao-runtime\baseline\backend\ml\b3_feature_engineer.py:92: in calculate_features
+    df = super().calculate_features(df)
+.correcao-runtime\baseline\backend\ml\feature_engineer.py:63: in calculate_features
+    raise ImportError("pandas-ta n�o instalado. Execute: pip install pandas-ta")
+E   ImportError: pandas-ta n�o instalado. Execute: pip install pandas-ta
+_________________ TestDayOfWeekFeature.test_dow_columns_exist _________________
+.correcao-runtime\baseline\backend\tests\unit\test_b3_feature_engineer.py:72: in test_dow_columns_exist
+    df = engineer.calculate_features(sample_df)
+.correcao-runtime\baseline\backend\ml\b3_feature_engineer.py:92: in calculate_features
+    df = super().calculate_features(df)
+.correcao-runtime\baseline\backend\ml\feature_engineer.py:63: in calculate_features
+    raise ImportError("pandas-ta n�o instalado. Execute: pip install pandas-ta")
+E   ImportError: pandas-ta n�o instalado. Execute: pip install pandas-ta
+___________________ TestDayOfWeekFeature.test_known_monday ____________________
+.correcao-runtime\baseline\backend\tests\unit\test_b3_feature_engineer.py:91: in test_known_monday
+    out = engineer.calculate_features(df)
+.correcao-runtime\baseline\backend\ml\b3_feature_engineer.py:92: in calculate_features
+    df = super().calculate_features(df)
+.correcao-runtime\baseline\backend\ml\feature_engineer.py:63: in calculate_features
+    raise ImportError("pandas-ta n�o instalado. Execute: pip install pandas-ta")
+E   ImportError: pandas-ta n�o instalado. Execute: pip install pandas-ta
+___________________ TestDayOfWeekFeature.test_dow_exclusive ___________________
+.correcao-runtime\baseline\backend\tests\unit\test_b3_feature_engineer.py:97: in test_dow_exclusive
+    df = engineer.calculate_features(sample_df)
+.correcao-runtime\baseline\backend\ml\b3_feature_engineer.py:92: in calculate_features
+    df = super().calculate_features(df)
+.correcao-runtime\baseline\backend\ml\feature_engineer.py:63: in calculate_features
+    raise ImportError("pandas-ta n�o instalado. Execute: pip install pandas-ta")
+E   ImportError: pandas-ta n�o instalado. Execute: pip install pandas-ta
+_________________ TestDayOfWeekFeature.test_dow_values_binary _________________
+.correcao-runtime\baseline\backend\tests\unit\test_b3_feature_engineer.py:103: in test_dow_values_binary
+    df = engineer.calculate_features(sample_df)
+.correcao-runtime\baseline\backend\ml\b3_feature_engineer.py:92: in calculate_features
+    df = super().calculate_features(df)
+.correcao-runtime\baseline\backend\ml\feature_engineer.py:63: in calculate_features
+    raise ImportError("pandas-ta n�o instalado. Execute: pip install pandas-ta")
+E   ImportError: pandas-ta n�o instalado. Execute: pip install pandas-ta
+_________________ TestBaseFeaturesPreserved.test_rsi_present __________________
+.correcao-runtime\baseline\backend\tests\unit\test_b3_feature_engineer.py:167: in test_rsi_present
+    df = engineer.calculate_features(sample_df)
+.correcao-runtime\baseline\backend\ml\b3_feature_engineer.py:92: in calculate_features
+    df = super().calculate_features(df)
+.correcao-runtime\baseline\backend\ml\feature_engineer.py:63: in calculate_features
+    raise ImportError("pandas-ta n�o instalado. Execute: pip install pandas-ta")
+E   ImportError: pandas-ta n�o instalado. Execute: pip install pandas-ta
+_________________ TestBaseFeaturesPreserved.test_macd_present _________________
+.correcao-runtime\baseline\backend\tests\unit\test_b3_feature_engineer.py:171: in test_macd_present
+    df = engineer.calculate_features(sample_df)
+.correcao-runtime\baseline\backend\ml\b3_feature_engineer.py:92: in calculate_features
+    df = super().calculate_features(df)
+.correcao-runtime\baseline\backend\ml\feature_engineer.py:63: in calculate_features
+    raise ImportError("pandas-ta n�o instalado. Execute: pip install pandas-ta")
+E   ImportError: pandas-ta n�o instalado. Execute: pip install pandas-ta
+__________ TestBaseFeaturesPreserved.test_no_nan_in_feature_columns ___________
+.correcao-runtime\baseline\backend\tests\unit\test_b3_feature_engineer.py:176: in test_no_nan_in_feature_columns
+    df = engineer.calculate_features(sample_df)
+.correcao-runtime\baseline\backend\ml\b3_feature_engineer.py:92: in calculate_features
+    df = super().calculate_features(df)
+.correcao-runtime\baseline\backend\ml\feature_engineer.py:63: in calculate_features
+    raise ImportError("pandas-ta n�o instalado. Execute: pip install pandas-ta")
+E   ImportError: pandas-ta n�o instalado. Execute: pip install pandas-ta
+__________________________ test_detecta_gap_pequeno ___________________________
+.correcao-runtime\baseline\backend\tests\unit\test_data_collector.py:79: in test_detecta_gap_pequeno
+    assert report.small_gaps_filled > 0
+E   assert 0 > 0
+E    +  where 0 = <ml.data_collector.DataQualityReport object at 0x0000021988E8DAD0>.small_gaps_filled
+_____________________________ test_close_position _____________________________
+.correcao-runtime\baseline\backend\tests\unit\test_order_executor.py:151: in test_close_position
+    result = await executor.close_position(trade, reason="manual")
+.correcao-runtime\baseline\backend\trading\order_executor.py:117: in close_position
+    self._db.add(TradeEvent(
+<string>:4: in __init__
+    ???
+.correcao-runtime\python\Lib\site-packages\sqlalchemy\orm\state.py:564: in _initialize_instance
+    with util.safe_reraise():
+.correcao-runtime\python\Lib\site-packages\sqlalchemy\util\langhelpers.py:146: in __exit__
+    raise exc_value.with_traceback(exc_tb)
+.correcao-runtime\python\Lib\site-packages\sqlalchemy\orm\state.py:562: in _initialize_instance
+    manager.original_init(*mixed[1:], **kwargs)
+.correcao-runtime\python\Lib\site-packages\sqlalchemy\orm\decl_base.py:2142: in _declarative_constructor
+    setattr(self, k, kwargs[k])
+.correcao-runtime\python\Lib\site-packages\sqlalchemy\orm\attributes.py:537: in __set__
+    self.impl.set(
+.correcao-runtime\python\Lib\site-packages\sqlalchemy\orm\attributes.py:1467: in set
+    value = self.fire_replace_event(state, dict_, value, old, initiator)
+.correcao-runtime\python\Lib\site-packages\sqlalchemy\orm\attributes.py:1506: in fire_replace_event
+    value = fn(
+.correcao-runtime\python\Lib\site-packages\sqlalchemy\orm\attributes.py:2161: in emit_backref_from_scalar_set_event
+    instance_state(child),
+E   AttributeError: 'types.SimpleNamespace' object has no attribute '_sa_instance_state'
+_________________________ test_rejeita_step_size_zero _________________________
+.correcao-runtime\baseline\backend\tests\unit\test_position_sizer.py:89: in test_rejeita_step_size_zero
+    sizer.calculate(
+.correcao-runtime\baseline\backend\risk\position_sizer.py:83: in calculate
+    raise PositionSizingError("Step size deve ser positivo.")
+E   risk.position_sizer.PositionSizingError: Step size deve ser positivo.
+
+During handling of the above exception, another exception occurred:
+.correcao-runtime\baseline\backend\tests\unit\test_position_sizer.py:88: in test_rejeita_step_size_zero
+    with pytest.raises(PositionSizingError, match="step size"):
+E   AssertionError: Regex pattern did not match.
+E    Regex: 'step size'
+E    Input: 'Step size deve ser positivo.'
+============================== warnings summary ===============================
+.correcao-runtime\python\Lib\site-packages\pydantic\_internal\_fields.py:160
+  C:\Users\rgran\Documents\Dev\autoxtrade\.correcao-runtime\python\Lib\site-packages\pydantic\_internal\_fields.py:160: UserWarning: Field "model_version" has conflict with protected namespace "model_".
+  
+  You may be able to resolve this warning by setting `model_config['protected_namespaces'] = ()`.
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED .correcao-runtime\baseline\backend\tests\unit\test_b3_feature_engineer.py::TestSessionFeature::test_abertura_hour_9
+FAILED .correcao-runtime\baseline\backend\tests\unit\test_b3_feature_engineer.py::TestSessionFeature::test_session_columns_exist
+FAILED .correcao-runtime\baseline\backend\tests\unit\test_b3_feature_engineer.py::TestSessionFeature::test_session_exclusive
+FAILED .correcao-runtime\baseline\backend\tests\unit\test_b3_feature_engineer.py::TestSessionFeature::test_session_values_binary
+FAILED .correcao-runtime\baseline\backend\tests\unit\test_b3_feature_engineer.py::TestDayOfWeekFeature::test_dow_columns_exist
+FAILED .correcao-runtime\baseline\backend\tests\unit\test_b3_feature_engineer.py::TestDayOfWeekFeature::test_known_monday
+FAILED .correcao-runtime\baseline\backend\tests\unit\test_b3_feature_engineer.py::TestDayOfWeekFeature::test_dow_exclusive
+FAILED .correcao-runtime\baseline\backend\tests\unit\test_b3_feature_engineer.py::TestDayOfWeekFeature::test_dow_values_binary
+FAILED .correcao-runtime\baseline\backend\tests\unit\test_b3_feature_engineer.py::TestBaseFeaturesPreserved::test_rsi_present
+FAILED .correcao-runtime\baseline\backend\tests\unit\test_b3_feature_engineer.py::TestBaseFeaturesPreserved::test_macd_present
+FAILED .correcao-runtime\baseline\backend\tests\unit\test_b3_feature_engineer.py::TestBaseFeaturesPreserved::test_no_nan_in_feature_columns
+FAILED .correcao-runtime\baseline\backend\tests\unit\test_data_collector.py::test_detecta_gap_pequeno
+FAILED .correcao-runtime\baseline\backend\tests\unit\test_order_executor.py::test_close_position
+FAILED .correcao-runtime\baseline\backend\tests\unit\test_position_sizer.py::test_rejeita_step_size_zero
+14 failed, 63 passed, 1 warning in 4.90s

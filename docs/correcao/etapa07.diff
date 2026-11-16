@@ -1,0 +1,28 @@
+diff --git a/backend/trading/connectors/dwx.py b/backend/trading/connectors/dwx.py
+@@
+-        self._dwx_dir = join(mt5_files_dir, "DWX")
++        self._dwx_dir = configured_dir if configured_dir.name.upper() == "DWX" else configured_dir / "DWX"
+@@ list_positions/list_pending_orders
++        Consulta fontes reais quando disponíveis e retorna vazio quando a fonte de posições está ausente.
++        Nenhuma operação mutante é acionada.
++
++diff --git a/backend/trading/dwx_probe.py b/backend/trading/dwx_probe.py
++new file mode 100644
++Sondagem read-only de arquivos DWX_*, padrão de nomes, fontes, hints, frescor e ausências.
++
++diff --git a/backend/integration/probe.py b/backend/integration/probe.py
++new file mode 100644
++Probe manual via AUTOXTRADE_MT5_FILES_DIR/argumento, reconciliação, validação de símbolos,
++guards contra escrita e geração de docs/correcao/integracao-mt5.md.
++
++diff --git a/backend/integration/monitor_dry_run.py b/backend/integration/monitor_dry_run.py
++new file mode 100644
++Monitor OrderMonitor em cinco iterações, somente consulta, com snapshot e guards de mutação.
++
++diff --git a/backend/integration/__init__.py b/backend/integration/__init__.py
++new file mode 100644
++
++diff --git a/docs/correcao/ESTADO.md b/docs/correcao/ESTADO.md
++@@
+++Etapa 07 concluída; próximo marco: piloto paper-trading simulado.
+*** End Patch

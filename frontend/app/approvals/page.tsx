@@ -8,7 +8,7 @@ import { ToastAlert } from '@/components/ui/ToastAlert'
 
 type Filter = EntryApproval['status'] | 'all'
 
-const FILTERS: Filter[] = ['pending', 'approved', 'executing', 'executed', 'rejected', 'failed', 'all']
+const FILTERS: Filter[] = ['pending', 'approved', 'executing', 'executed', 'closed_partial', 'rejected', 'failed', 'all']
 
 export default function ApprovalsPage() {
   const qc = useQueryClient()
@@ -73,7 +73,7 @@ export default function ApprovalsPage() {
                   : 'border-slate-700 text-slate-300 hover:bg-slate-800',
               ].join(' ')}
             >
-              {f}
+              {f === 'closed_partial' ? 'Parcial encerrada' : f}
             </button>
           ))}
         </div>

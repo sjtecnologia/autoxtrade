@@ -1,0 +1,56 @@
+Etapa 04 - Dimensionamento / sizing
+Data: 2026-09-25
+
+Escopo
+- F04: dimensionamento deixa de ser fixo e passa a usar PositionSizer no RiskManager.
+- Sizing respeita capital, risco por trade, step size, limites minimo/maximo e alavancagem.
+- backend/trading/safety.py permaneceu intacto.
+- Nenhuma corretora, ordem real, Telegram, commit, push ou deploy foi acionado.
+
+Checkout e remoto
+- Checkout: /Users/renato/Documents/Developement/autoxtrade 2
+- Remoto: git@github.com:sjtecnologia/autoxtrade.git (fetch/push)
+
+Arquivos funcionais alterados
+- backend/risk/manager.py
+- backend/risk/position_sizer.py
+- backend/tests/unit/test_regressions_pending.py
+- backend/tests/unit/test_sizing.py
+
+Validacoes executadas
+1. .venv/bin/python -m pytest tests/ -q -rx --tb=short
+   Resultado: 122 passed, 2 xfailed, 1 warning in 10.88s
+   XFAIL:
+   - F12 / etapa 05: tests/unit/test_data_collector.py::test_detecta_gap_pequeno
+   - F05 / etapa 06: tests/unit/test_regressions_pending.py::test_didi_rejects_bad_validation_metrics
+
+2. .venv/bin/python -m pytest tests/unit/test_safety.py -q --tb=short
+   Resultado: 31 passed, 1 warning in 7.96s
+
+3. .venv/bin/python -m pytest tests/unit/test_regressions_pending.py --runxfail -q --tb=short
+   Resultado: 4 passed, 1 failed, 1 warning in 7.27s
+   Falha esperada por --runxfail:
+   - F05 / etapa 06: DiDi aprova folds reprovados
+
+4. .venv/bin/python -m pytest tests/unit/test_sizing.py -q --tb=short
+   Resultado: 5 passed in 2.81s
+
+Validacao focada adicional
+- .venv/bin/python -m pytest tests/unit/test_sizing.py tests/unit/test_position_sizer.py tests/unit/test_regressions_pending.py -q --tb=short
+   Resultado: 16 passed, 1 xfailed, 1 warning in 7.27s
+
+Antes/depois
+- Antes da etapa 04: suite completa em 116 passed / 3 xfailed; F04, F05 e F12 pendentes.
+- Depois da etapa 04: suite completa em 122 passed / 2 xfailed; F04 corrigido, F05/F12 permanecem documentados.
+
+Confirmacao de seguranca
+- Nenhuma ordem real foi enviada.
+- O MT5 conectado nao foi usado para mutacao; a etapa atuou apenas em calculo de risco/sizing e testes locais.
+- backend/trading/safety.py permaneceu intacto e fail-closed.
+- Nenhuma liberacao externa foi adicionada.
+- Lote abaixo do minimo e bloqueado por PositionSizingError; lote acima do maximo e limitado ao maximo valido arredondado para step size; risco e alavancagem participam do calculo.
+- RiskManager converte sizing invalido em aprovacao negada, sem deixar a estrategia enviar quantidade invalida.
+
+Resultado final
+- F04: corrigido.
+- Pendentes: F05 / etapa 06, F12 / etapa 05.

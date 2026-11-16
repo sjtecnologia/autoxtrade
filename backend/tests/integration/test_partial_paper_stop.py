@@ -2,6 +2,7 @@ import asyncio
 from decimal import Decimal
 
 import pytest
+import pandas as pd
 from sqlalchemy import select, text
 from sqlalchemy.exc import DBAPIError
 
@@ -52,8 +53,9 @@ async def partial_trade(sessions, side="buy"):
             await OrderExecutor(connector, db, evidence_provider=connector._test_evidence_provider).open_position(**request)
         trade = (await db.execute(select(Trade).where(Trade.intent_id == intent_id))).scalar_one()
         data = frame()
-        trade.open_at = data.loc[75, "timestamp"].to_pydatetime()
-        trade.paper_monitor_candle_at = trade.open_at
+        start = pd.Timestamp(trade.open_at).floor("h") - pd.Timedelta(hours=75)
+        data["timestamp"] = pd.date_range(start, periods=len(data), freq="h")
+        trade.paper_monitor_candle_at = data.loc[75, "timestamp"].to_pydatetime()
         trade.paper_monitor_timeframe = "1h"
         trade_id = trade.id
         await db.commit()

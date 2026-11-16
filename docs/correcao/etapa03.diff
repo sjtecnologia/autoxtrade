@@ -1,0 +1,393 @@
+diff --git a/backend/tests/conftest.py b/backend/tests/conftest.py
+index 08a24ca..8e02d0d 100644
+--- a/backend/tests/conftest.py
++++ b/backend/tests/conftest.py
+@@ -88,6 +88,13 @@ def _audit(event, args):
+             args[1] in (
+                 "git rev-parse --git-dir", "git.cmd rev-parse --git-dir", "git.exe rev-parse --git-dir",
+                 ["git", "rev-parse", "--git-dir"], ["git.cmd", "rev-parse", "--git-dir"],
++                ["git", "rev-parse", "HEAD"], ["git.cmd", "rev-parse", "HEAD"],
++                ["git.exe", "rev-parse", "HEAD"],
++                ["git", "rev-list", "HEAD", "--count"], ["git.cmd", "rev-list", "HEAD", "--count"],
++                ["git.exe", "rev-list", "HEAD", "--count"],
++                ["git", "show", "-s", "--format=%ci", "HEAD"],
++                ["git.cmd", "show", "-s", "--format=%ci", "HEAD"],
++                ["git.exe", "show", "-s", "--format=%ci", "HEAD"],
+             )
+             or (
+                 isinstance(args[1], (list, tuple))
+diff --git a/backend/tests/unit/test_regressions_pending.py b/backend/tests/unit/test_regressions_pending.py
+index d580f68..07df714 100644
+--- a/backend/tests/unit/test_regressions_pending.py
++++ b/backend/tests/unit/test_regressions_pending.py
+@@ -11,10 +11,12 @@ import pytest
+ 
+ from db.models import Trade
+ from trading.connectors.types import OrderSide, OrderType
++from trading.connectors.fake_transports import TemporaryDWXTransport
+ from trading.connectors.memory_transport import MemoryTransport
+ from trading.connectors.simulated import SimulatedConnector
+ from trading.contracts import (Capability, CapabilityUnavailable, ExecutionContext,
+-                               ExecutionMode, ExecutionResult, Instrument, ResultState)
++                               ExecutionMode, ExecutionResult, Instrument, OrderIntent,
++                               ResultState)
+ from trading.safety import AccountNature, ExposureBlocked
+ 
+ 
+@@ -61,11 +63,18 @@ async def test_failed_protection_cannot_claim_close_without_execution():
+ 
+ async def test_dwx_protection_must_not_open_opposite_order(tmp_path):
+     from trading.connectors.dwx import DWXConnector
+-    conn = DWXConnector(str(tmp_path))
+-    conn.place_order = AsyncMock()
+-    # F03 / etapa 03: a proteção MT5 real ainda exige reconciliação por ticket.
+-    with pytest.raises((ExposureBlocked, CapabilityUnavailable)):
+-        await conn.place_oco_order("TEST", OrderSide.SELL, D("1"), D("110"), D("95"), D("94"))
++    context = _context()
++    transport = TemporaryDWXTransport(context)
++    transport.prices[context.instrument.symbol] = D("100")
++    conn = DWXConnector(str(tmp_path), context=context, transport=transport)
++    entry = await conn.create_order(OrderIntent("entry", context, OrderSide.BUY, OrderType.MARKET, D("1")))
++    conn.place_order = AsyncMock(side_effect=AssertionError("opposite order fallback is forbidden"))
++
++    result = await conn.modify_position_protection(
++        entry.position_id, stop_loss=D("95"), take_profit=D("110"), intent_id="protect")
++
++    assert result.state is ResultState.CONFIRMED
++    assert result.position_id == entry.position_id
+     conn.place_order.assert_not_awaited()
+ 
+ 
+diff --git a/backend/trading/order_monitor.py b/backend/trading/order_monitor.py
+index c277ec7..40a6843 100644
+--- a/backend/trading/order_monitor.py
++++ b/backend/trading/order_monitor.py
+@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
+ from config import settings
+ from db.models import Trade, TradeEvent
+ from trading.connectors.base import BaseConnector
+-from trading.connectors.types import OrderSide, OrderType
++from trading.reconciliation import ReconciliationReport, reconcile_positions
+ 
+ logger = logging.getLogger(__name__)
+ 
+@@ -28,75 +28,16 @@ class OrderMonitor:
+         if self._redis:
+             await self._redis.aclose()
+ 
+-    async def check_orphan_positions(self) -> None:
+-        """Verifica trades "open" sem OCO correspondente na exchange e resolve."""
++    async def check_orphan_positions(self) -> ReconciliationReport:
++        """Sinaliza divergências entre sistema e conector sem executar mutações."""
+         result = await self._db.execute(
+-            select(Trade).where(Trade.status == "open", Trade.mode == "live")
++            select(Trade).where(Trade.status == "open")
+         )
+         open_trades = result.scalars().all()
+-        if not open_trades:
+-            return
+-
+-        logger.info("[monitor] Verificando %d posições abertas por órfãos...", len(open_trades))
+-        for trade in open_trades:
+-            try:
+-                open_orders = await self._conn.get_open_orders(trade.symbol)
+-                has_stop = any(o.type in (OrderType.STOP_MARKET, OrderType.OCO) for o in open_orders)
+-                if not has_stop:
+-                    logger.warning("[monitor] Trade #%d (%s) sem OCO/stop — tentando recriar", trade.id, trade.symbol)
+-                    await self._recreate_stop(trade)
+-            except Exception as exc:
+-                logger.error("[monitor] Erro ao verificar órfão trade #%d: %s", trade.id, exc)
+-
+-    async def _recreate_stop(self, trade: Trade) -> None:
+-        close_side = OrderSide.SELL if trade.side == "buy" else OrderSide.BUY
+-        try:
+-            await self._conn.place_order(
+-                symbol=trade.symbol,
+-                side=close_side,
+-                order_type=OrderType.STOP_MARKET,
+-                amount=trade.quantity,
+-                price=trade.stop_loss,
+-            )
+-            self._db.add(TradeEvent(
+-                trade=trade,
+-                event_type="OCO_SET",
+-                payload={"note": "stop recriado no startup (órfão)"},
+-            ))
+-            await self._db.commit()
+-            logger.info("[monitor] Stop recriado para trade #%d", trade.id)
+-        except Exception as exc:
+-            logger.critical("[monitor] Não conseguiu recriar stop para #%d — fechando a mercado: %s", trade.id, exc)
+-            await self._close_at_market(trade, "orphan_no_stop")
+-
+-    async def _close_at_market(self, trade: Trade, reason: str) -> None:
+-        import datetime
+-        close_side = OrderSide.SELL if trade.side == "buy" else OrderSide.BUY
+-        try:
+-            order = await self._conn.place_order(
+-                symbol=trade.symbol,
+-                side=close_side,
+-                order_type=OrderType.MARKET,
+-                amount=trade.quantity,
+-            )
+-            exit_price = order.average or await self._conn.get_current_price(trade.symbol)
+-        except Exception:
+-            exit_price = await self._conn.get_current_price(trade.symbol)
+-
+-        side_mult = Decimal("1") if trade.side == "buy" else Decimal("-1")
+-        pnl_net = (exit_price - trade.entry_price) * trade.quantity * side_mult
+-
+-        trade.status = "closed"
+-        trade.exit_price = exit_price
+-        trade.close_at = datetime.datetime.now(datetime.timezone.utc)
+-        trade.close_reason = reason
+-        trade.pnl_net = pnl_net.quantize(Decimal("0.01"))
+-        self._db.add(TradeEvent(
+-            trade=trade,
+-            event_type="MANUAL_CLOSE",
+-            payload={"reason": reason},
+-        ))
+-        await self._db.commit()
++        report = await reconcile_positions(self._conn, open_trades)
++        for issue in report.issues:
++            logger.warning("[monitor] Reconciliation issue: %s", issue)
++        return report
+ 
+     async def handle_order_update(self, event: dict) -> None:
+         """Processa update de ordem recebido via WebSocket e atualiza trade."""
+diff --git a/trading/reconciliation.py b/trading/reconciliation.py
+new file mode 100644
+index 0000000..d4101dd
+--- /dev/null
++++ b/trading/reconciliation.py
+@@ -0,0 +1,83 @@
++"""Read-only reconciliation between system state and connector state."""
++from dataclasses import dataclass
++from typing import Iterable
++
++from trading.safety import ExposureBlocked
++
++
++@dataclass(frozen=True)
++class ReconciliationIssue:
++    kind: str
++    position_id: str | None = None
++    order_id: str | None = None
++    trade_id: int | None = None
++    symbol: str | None = None
++    detail: str | None = None
++
++
++@dataclass(frozen=True)
++class ReconciliationReport:
++    issues: tuple[ReconciliationIssue, ...]
++
++    @property
++    def has_issues(self) -> bool:
++        return bool(self.issues)
++
++
++def _open_trades(trades: Iterable[object]) -> list[object]:
++    return [trade for trade in trades if getattr(trade, "status", "open") == "open"]
++
++
++async def reconcile_positions(connector, trades: Iterable[object]) -> ReconciliationReport:
++    """Compare known open trades with connector-reported positions/orders.
++
++    This routine deliberately never sends, cancels, reduces, or closes orders.
++    It only queries connector state and returns issues for the caller to surface.
++    """
++    issues: list[ReconciliationIssue] = []
++    system_trades = _open_trades(trades)
++    try:
++        connector_positions = await connector.list_positions()
++        connector_orders = await connector.list_pending_orders()
++    except ExposureBlocked as exc:
++        return ReconciliationReport((ReconciliationIssue("connector_unavailable", detail=str(exc)),))
++
++    trades_by_position = {
++        str(trade.position_id): trade for trade in system_trades if getattr(trade, "position_id", None)
++    }
++    connector_by_position = {str(position.id): position for position in connector_positions}
++
++    for trade in system_trades:
++        position_id = getattr(trade, "position_id", None)
++        if not position_id:
++            issues.append(ReconciliationIssue(
++                "system_position_unresolved", trade_id=getattr(trade, "id", None),
++                symbol=getattr(trade, "symbol", None), detail="Open trade has no position_id"))
++        elif str(position_id) not in connector_by_position:
++            issues.append(ReconciliationIssue(
++                "missing_connector_position", position_id=str(position_id),
++                trade_id=getattr(trade, "id", None), symbol=getattr(trade, "symbol", None)))
++
++    for position_id, position in connector_by_position.items():
++        if position_id not in trades_by_position:
++            issues.append(ReconciliationIssue(
++                "orphan_connector_position", position_id=position_id,
++                symbol=position.context.instrument.symbol))
++
++    system_order_ids = {
++        str(trade.open_order_id) for trade in system_trades if getattr(trade, "open_order_id", None)
++    }
++    connector_order_ids = {str(order.id) for order in connector_orders if getattr(order, "id", None)}
++
++    for order_id in sorted(system_order_ids - connector_order_ids):
++        trade = next((trade for trade in system_trades if str(getattr(trade, "open_order_id", "")) == order_id), None)
++        issues.append(ReconciliationIssue(
++            "missing_connector_order", order_id=order_id,
++            trade_id=getattr(trade, "id", None), symbol=getattr(trade, "symbol", None)))
++    for order in connector_orders:
++        order_id = str(order.id)
++        if order_id not in system_order_ids:
++            issues.append(ReconciliationIssue(
++                "orphan_connector_order", order_id=order_id, symbol=getattr(order, "symbol", None)))
++
++    return ReconciliationReport(tuple(issues))
+\ No newline at end of file
+diff --git a/tests/unit/test_dwx_protection.py b/tests/unit/test_dwx_protection.py
+new file mode 100644
+index 0000000..8b8adf0
+--- /dev/null
++++ b/tests/unit/test_dwx_protection.py
+@@ -0,0 +1,46 @@
++from decimal import Decimal
++from unittest.mock import AsyncMock
++
++from trading.connectors.dwx import DWXConnector
++from trading.connectors.fake_transports import TemporaryDWXTransport
++from trading.connectors.types import OrderSide, OrderType
++from trading.contracts import (Capability, ExecutionContext, ExecutionMode,
++                               Instrument, OrderIntent, ResultState)
++from trading.safety import AccountNature
++
++
++def _context():
++    return ExecutionContext(
++        venue="mt5", broker="simulator", account_id="mt5-paper-test",
++        nature=AccountNature.SIMULATED, verified=True, mode=ExecutionMode.PAPER,
++        market="FOREX", account_currency="USD", position_model="hedging",
++        instrument=Instrument(
++            symbol="EURUSD", asset_class="forex", base_currency="EUR", quote_currency="USD",
++            contract_size=Decimal("1"), tick_size=Decimal("0.00001"), tick_value=Decimal("0.00001"),
++            tick_currency="USD", min_volume=Decimal("0.01"), max_volume=Decimal("100"),
++            volume_step=Decimal("0.01"), price_precision=5, volume_precision=2,
++            margin_model="forex", margin_rate=Decimal("1"), min_notional=Decimal("0.01"),
++        ), capabilities=frozenset(Capability),
++    )
++
++
++async def test_dwx_protection_modifies_existing_position_without_opposite_order(tmp_path):
++    context = _context()
++    transport = TemporaryDWXTransport(context)
++    transport.prices[context.instrument.symbol] = Decimal("1.10000")
++    conn = DWXConnector(str(tmp_path), context=context, transport=transport)
++    conn.place_order = AsyncMock(side_effect=AssertionError("opposite order fallback is forbidden"))
++
++    entry = await conn.create_order(OrderIntent(
++        "entry", context, OrderSide.BUY, OrderType.MARKET, Decimal("0.10")))
++    result = await conn.modify_position_protection(
++        entry.position_id, stop_loss=Decimal("1.09000"), take_profit=Decimal("1.12000"),
++        intent_id="protect")
++
++    assert result.state is ResultState.CONFIRMED
++    assert result.position_id == entry.position_id
++    conn.place_order.assert_not_awaited()
++    assert list(transport.positions) == [entry.position_id]
++    commands = [path.read_text() for path in transport.directory.glob("DWX_Commands_*.txt")]
++    assert any("|MODIFY_ORDER|" in text for text in commands)
++    assert not any("sell" in text.lower() and "|OPEN_ORDER|" in text for text in commands)
+\ No newline at end of file
+diff --git a/tests/unit/test_reconciliation.py b/tests/unit/test_reconciliation.py
+new file mode 100644
+index 0000000..ea276e6
+--- /dev/null
++++ b/tests/unit/test_reconciliation.py
+@@ -0,0 +1,87 @@
++from decimal import Decimal
++from types import SimpleNamespace
++from unittest.mock import AsyncMock
++
++import pytest
++
++from trading.contracts import (Capability, ExecutionContext, ExecutionMode,
++                               Instrument, Position)
++from trading.connectors.types import OrderSide
++from trading.safety import AccountNature, ExposureBlocked
++
++
++def _context():
++    return ExecutionContext(
++        venue="mt5", broker="simulator", account_id="reconcile-test",
++        nature=AccountNature.SIMULATED, verified=True, mode=ExecutionMode.PAPER,
++        market="FOREX", account_currency="USD", position_model="hedging",
++        instrument=Instrument(
++            symbol="EURUSD", asset_class="forex", base_currency="EUR", quote_currency="USD",
++            contract_size=Decimal("1"), tick_size=Decimal("0.00001"), tick_value=Decimal("0.00001"),
++            tick_currency="USD", min_volume=Decimal("0.01"), max_volume=Decimal("100"),
++            volume_step=Decimal("0.01"), price_precision=5, volume_precision=2,
++            margin_model="forex", margin_rate=Decimal("1"), min_notional=Decimal("0.01"),
++        ), capabilities=frozenset(Capability),
++    )
++
++
++def _trade(position_id, status="open"):
++    return SimpleNamespace(
++        id=1, symbol="EURUSD", status=status, position_id=position_id,
++        open_order_id="entry-order", quantity=Decimal("0.10"), side="buy",
++    )
++
++
++def _position(position_id):
++    context = _context()
++    return Position(position_id, context, OrderSide.BUY, Decimal("0.10"), Decimal("1.10000"))
++
++
++@pytest.mark.parametrize("mutator", ["place_order", "reduce_position", "cancel_order"])
++async def test_reconciliation_detects_connector_orphan_without_real_order(mutator):
++    from trading.reconciliation import reconcile_positions
++    connector = SimpleNamespace(
++        list_positions=AsyncMock(return_value=[_position("broker-only")]),
++        list_pending_orders=AsyncMock(return_value=[]),
++        place_order=AsyncMock(side_effect=AssertionError("must not place orders")),
++        reduce_position=AsyncMock(side_effect=AssertionError("must not reduce positions")),
++        cancel_order=AsyncMock(side_effect=AssertionError("must not cancel orders")),
++    )
++
++    report = await reconcile_positions(connector, [])
++
++    assert [issue.kind for issue in report.issues] == ["orphan_connector_position"]
++    assert report.issues[0].position_id == "broker-only"
++    getattr(connector, mutator).assert_not_called()
++
++
++async def test_reconciliation_detects_system_position_missing_from_connector():
++    from trading.reconciliation import reconcile_positions
++    connector = SimpleNamespace(
++        list_positions=AsyncMock(return_value=[]),
++        list_pending_orders=AsyncMock(return_value=[]),
++    )
++
++    report = await reconcile_positions(connector, [_trade("system-only")])
++
++    missing_position = next(issue for issue in report.issues if issue.kind == "missing_connector_position")
++    assert missing_position.trade_id == 1
++    assert missing_position.position_id == "system-only"
++
++
++async def test_reconciliation_blocked_environment_is_signaled_without_mutation():
++    from trading.reconciliation import reconcile_positions
++    connector = SimpleNamespace(
++        list_positions=AsyncMock(side_effect=ExposureBlocked("blocked query")),
++        list_pending_orders=AsyncMock(return_value=[]),
++        place_order=AsyncMock(side_effect=AssertionError("must not place orders")),
++        reduce_position=AsyncMock(side_effect=AssertionError("must not reduce positions")),
++        cancel_order=AsyncMock(side_effect=AssertionError("must not cancel orders")),
++    )
++
++    report = await reconcile_positions(connector, [_trade("system-only")])
++
++    assert [issue.kind for issue in report.issues] == ["connector_unavailable"]
++    connector.place_order.assert_not_called()
++    connector.reduce_position.assert_not_called()
++    connector.cancel_order.assert_not_called()
+\ No newline at end of file

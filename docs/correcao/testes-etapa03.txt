@@ -1,0 +1,61 @@
+Etapa 03 - Protecao MT5 e reconciliacao
+Data: 2026-09-25
+
+Escopo
+- F03: protecao DWX/MT5 nao abre lado oposto; usa modificacao identificada da posicao/ticket ou bloqueia.
+- F09: reconciliacao read-only detecta divergencias/orfaos entre estado do sistema e conector.
+- backend/trading/safety.py permaneceu intacto.
+- Nenhuma corretora, ordem real, Telegram, commit, push ou deploy foi acionado.
+
+Checkout e remoto
+- Checkout: /Users/renato/Documents/Developement/autoxtrade 2
+- Remoto: git@github.com:sjtecnologia/autoxtrade.git (fetch/push)
+
+Arquivos funcionais alterados
+- backend/tests/conftest.py
+- backend/trading/order_monitor.py
+- backend/trading/reconciliation.py
+- backend/tests/unit/test_dwx_protection.py
+- backend/tests/unit/test_reconciliation.py
+- backend/tests/unit/test_regressions_pending.py
+
+Validacoes executadas
+1. .venv/bin/python -m pytest tests/ -q -rx --tb=short
+   Resultado: 116 passed, 3 xfailed, 1 warning in 10.48s
+   XFAIL:
+   - F12 / etapa 05: tests/unit/test_data_collector.py::test_detecta_gap_pequeno
+   - F04 / etapa 04: tests/unit/test_regressions_pending.py::test_risk_must_use_sizer_and_drawdown
+   - F05 / etapa 06: tests/unit/test_regressions_pending.py::test_didi_rejects_bad_validation_metrics
+
+2. .venv/bin/python -m pytest tests/unit/test_safety.py -q --tb=short
+   Resultado: 31 passed, 1 warning in 6.32s
+
+3. .venv/bin/python -m pytest tests/unit/test_regressions_pending.py --runxfail -q --tb=short
+   Resultado: 3 passed, 2 failed, 1 warning in 6.42s
+   Falhas esperadas por --runxfail:
+   - F04 / etapa 04: sizing fixo, sizer nao chamado
+   - F05 / etapa 06: DiDi aprova folds reprovados
+
+4. .venv/bin/python -m pytest tests/unit/test_dwx_protection.py -q --tb=short
+   Resultado: 1 passed in 0.82s
+
+5. .venv/bin/python -m pytest tests/unit/test_reconciliation.py -q --tb=short
+   Resultado: 5 passed in 0.97s
+
+Antes/depois
+- Antes da etapa 03: suite estabilizada em 110 passed / 3 xfailed; F03/F09 pendentes.
+- Depois da etapa 03: suite completa em 116 passed / 3 xfailed; F03 e F09 cobertos por testes dedicados.
+
+Confirmacao de seguranca
+- Nenhuma ordem real foi enviada.
+- A protecao DWX testada usa TemporaryDWXTransport local e arquivo temporario controlado.
+- place_order foi mockado para falhar caso fosse usado como fallback de lado oposto; o assert confirmou que nao foi chamado.
+- A reconciliacao chama apenas list_positions e list_pending_orders; nao chama place_order, reduce_position, cancel_order nem fechamento automatico.
+- OrderMonitor deixou de recriar stop ou fechar a mercado durante reconciliacao; agora apenas retorna/loga issues.
+- O gate em backend/trading/safety.py permaneceu intacto e fail-closed.
+- A allowlist do conftest segue restrita a sondagens git read-only de versionamento do CCXT/toolz; nao ha liberacao generica de subprocess.Popen.
+
+Resultado final
+- F03: corrigido.
+- F09: corrigido.
+- Pendentes: F04 / etapa 04, F05 / etapa 06, F12 / etapa 05.

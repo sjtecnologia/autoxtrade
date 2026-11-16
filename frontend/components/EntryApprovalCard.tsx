@@ -127,7 +127,7 @@ export default function EntryApprovalCard({ approval, onApprove, onReject, isSub
               {isBuy ? 'Compra' : 'Venda'}
             </span>
             <span className="rounded-full border border-slate-700 px-2 py-0.5 text-xs uppercase text-slate-300">
-              {approval.status}
+              {approval.status === 'closed_partial' ? 'Parcial encerrada' : approval.status}
             </span>
           </div>
           <p className="text-xs text-slate-400">
@@ -264,6 +264,11 @@ export default function EntryApprovalCard({ approval, onApprove, onReject, isSub
             </div>
           )}
 
+          {approval.resolution && (
+            <p className="text-sm text-slate-300">
+              Posição encerrada. Quantidade executada: {approval.resolution.filled_quantity} de {approval.resolution.requested_quantity}.
+            </p>
+          )}
           {approval.error && <p className="text-xs text-red-400">Erro: {approval.error}</p>}
         </div>
       </div>

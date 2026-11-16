@@ -1,0 +1,30 @@
+Correção AutoXTrade - Etapa 05: dados e continuidade
+Data: 2026-09-25
+Runtime: backend/.venv/bin/python (Python 3.12)
+
+Comandos e resultados
+
+$ .venv/bin/python -m pytest tests/unit/test_data_collector.py -q --tb=short
+6 passed, 1 warning
+
+$ .venv/bin/python -m pytest tests/unit/test_data_continuity.py -q --tb=short
+4 passed, 1 warning
+
+$ .venv/bin/python -m pytest tests/unit/test_safety.py -q --tb=short
+31 passed, 1 warning
+
+$ .venv/bin/python -m pytest tests/unit/test_regressions_pending.py --runxfail -q --tb=short
+4 passed, 1 failed, 1 warning
+Falha deliberada e documentada: F05 / etapa 06 (DiDi aprova folds reprovados).
+F11 e F12 nao falharam.
+
+$ .venv/bin/python -m pytest tests/ -q -rx --tb=short
+127 passed, 1 xfailed, 1 warning
+O unico xfail restante e F05 / etapa 06.
+
+Cobertura entregue
+- F12: gap pequeno e preenchido deterministicamente por forward-fill do ultimo OHLC conhecido; volume do candle sintetico e zero. Gaps acima de 2 candles faltantes sao mantidos e registrados em large_gaps/large_gaps_detected.
+- F11: dados fora de ordem sao sinalizados antes da ordenacao; frescor e calculado contra janela configuravel; simbolos fora do catalogo e simbolos sinteticos sem contexto de instrumento/venue levantam CapabilityUnavailable.
+- Coleta MT5 validada somente em testes locais. Nenhuma ordem foi criada, modificada, fechada ou enviada.
+- backend/trading/safety.py permaneceu intacto; o gate fail-closed continua bloqueando execucao externa.
+- Nenhuma conexao de MT5, corretora, API, Celery ou servico externo foi iniciada nesta etapa.

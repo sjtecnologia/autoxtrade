@@ -1,0 +1,856 @@
+diff --git a/backend/api/routes/approvals.py b/backend/api/routes/approvals.py
+--- a/backend/api/routes/approvals.py
++++ b/backend/api/routes/approvals.py
+@@ -41,6 +41,7 @@
+     expires_at: datetime
+     updated_at: datetime | None = None
+     error: str | None = None
++    resolution: dict[str, Any] | None = None
+ 
+ 
+ class EntryApprovalDecisionResponse(BaseModel):
+@@ -104,6 +105,7 @@
+         expires_at=datetime.fromisoformat(item["expires_at"]),
+         updated_at=datetime.fromisoformat(item["updated_at"]) if item.get("updated_at") else None,
+         error=item.get("error"),
++        resolution=item.get("resolution"),
+     )
+ 
+ 
+@@ -111,7 +113,7 @@
+ async def list_entry_approvals(
+     status: str | None = Query(
+         default=None,
+-        description="pending|approved|executing|executed|rejected|expired|failed",
++        description="pending|approved|executing|executed|closed_partial|rejected|expired|failed",
+     ),
+     _: str = Depends(verify_token),
+ ) -> list[EntryApprovalResponse]:
+diff --git a/backend/paper/close_validation.py b/backend/paper/close_validation.py
+new file mode 100644
+--- /dev/null
++++ b/backend/paper/close_validation.py
+@@ -0,0 +1,96 @@
++"""Validate durable paper costs and fully accounted, already closed exposure."""
++from decimal import Decimal, InvalidOperation
++
++from sqlalchemy import select
++
++from paper.costs import parse_costs
++from trading.safety import ExposureBlocked
++
++
++def validated_entry_costs(context, trade, entry):
++    """Use the immutable entry request, never the current cost configuration."""
++    if entry is None or entry.payload.get("kind") != "entry":
++        raise ValueError("Immutable entry receipt missing; costs cannot be verified")
++    costs_data = entry.payload.get("paper_costs")
++    if not isinstance(costs_data, dict) or (trade.execution_context or {}).get("paper_costs") != costs_data:
++        raise ValueError("Paper costs conflict with immutable entry receipt")
++    costs = parse_costs({trade.symbol: costs_data})[trade.symbol]
++    raw = Decimal(entry.result["average"])
++    offset = costs.spread_price + costs.slippage_price
++    adjusted = raw + offset if trade.side == "buy" else raw - offset
++    if (trade.side not in {"buy", "sell"} or not raw.is_finite() or raw <= 0
++            or not adjusted.is_finite() or adjusted <= 0
++            or trade.entry_price != adjusted
++            or trade.entry_value != (
++                adjusted * trade.quantity * context.instrument.contract_size
++            ).quantize(Decimal("0.01"))):
++        raise ValueError("Trade entry accounting conflicts with immutable entry receipt")
++    return costs
++
++
++async def closed_trade_proof(db, effects, position_id):
++    """Read-only proof under the normal intent -> trade -> authority -> position locks.
++
++    Released leases are irrelevant to an already committed effect. The immutable
++    decision and receipt must still describe the current terminal exposure, and
++    the Trade's accounting and event must have committed together with its cursor.
++    """
++    from db.models import TradeEvent
++    from paper.durable_effects import PaperEffectOperation, PaperProtectionAttempt
++
++    intent, trade, authority, position = await effects._locked_protection_state(db, position_id)
++    if (trade is None or trade.status != "closed" or position.quantity != 0
++            or not trade.close_order_id or not trade.close_order_id.startswith("manual-close:")):
++        return None
++    key = (effects._account_key, position_id, trade.close_order_id)
++    attempt = await db.get(PaperProtectionAttempt, key)
++    receipt = await db.get(PaperEffectOperation, key)
++    entry = await db.get(PaperEffectOperation, (effects._account_key, position_id, "entry:" + intent.intent_id))
++    if attempt is None or receipt is None or attempt.payload != receipt.payload:
++        return None
++    payload = receipt.payload
++    try:
++        if (payload.get("kind") != "reduce" or not effects._manual_close_matches(
++                intent, trade, authority, position, entry, payload, Decimal("0"))
++                or attempt.revision != payload["revision"]
++                or receipt.result != {"filled": payload["quantity"], "average": payload["execution_price"]}
++                or intent.order_id != trade.open_order_id or intent.order_id != entry.result["order_id"]
++                or intent.quantity != authority.quantity
++                or intent.result_state != ("confirmed" if trade.quantity == intent.quantity else "partial")
++                or not Decimal("0") < trade.quantity <= intent.quantity
++                or trade.close_reason != payload["reason"]
++                or trade.close_at is None or trade.close_at < trade.open_at
++                or trade.entry_value is None or trade.entry_value <= 0):
++            return None
++        costs = validated_entry_costs(effects.context, trade, entry)
++        raw_exit = Decimal(payload["execution_price"])
++        offset = costs.spread_price + costs.slippage_price
++        exit_price = raw_exit - offset if trade.side == "buy" else raw_exit + offset
++        size = effects.context.instrument.contract_size
++        commission = (trade.entry_price + exit_price) * trade.quantity * size * costs.commission_rate
++        gross = (exit_price - trade.entry_price) * trade.quantity * size * (1 if trade.side == "buy" else -1)
++        if (not raw_exit.is_finite() or raw_exit <= 0 or not exit_price.is_finite() or exit_price <= 0
++                or trade.exit_price != exit_price
++                or trade.exit_value != (exit_price * trade.quantity * size).quantize(Decimal("0.01"))
++                or trade.commission != commission.quantize(Decimal("0.01"))
++                or trade.pnl_gross != gross.quantize(Decimal("0.01"))
++                or trade.pnl_net != (gross - commission).quantize(Decimal("0.01"))
++                or trade.pnl_pct != ((gross - commission) / trade.entry_value * 100).quantize(Decimal("0.0001"))):
++            return None
++        events = (await db.execute(select(TradeEvent).where(
++            TradeEvent.trade_id == trade.id,
++            TradeEvent.event_type == ("MANUAL_CLOSE" if payload["candle"] is None else payload["reason"]),
++            TradeEvent.payload["operation_id"].astext == receipt.operation_id,
++        ))).scalars().all()
++        if (len(events) != 1 or events[0].payload.get("reason") != payload["reason"]
++                or Decimal(events[0].payload["exit_price"]) != trade.exit_price
++                or events[0].payload.get("candle") != payload["candle"]):
++            return None
++        return dict(
++            outcome="closed" if trade.quantity == intent.quantity else "closed_partial",
++            trade_id=trade.id, close_operation_id=receipt.operation_id, reason=trade.close_reason,
++            requested_quantity=str(intent.quantity), filled_quantity=str(trade.quantity),
++            unfilled_quantity=str(intent.quantity - trade.quantity),
++        )
++    except (ExposureBlocked, KeyError, TypeError, ValueError, InvalidOperation):
++        return None
+diff --git a/backend/paper/durable_effects.py b/backend/paper/durable_effects.py
+--- a/backend/paper/durable_effects.py
++++ b/backend/paper/durable_effects.py
+@@ -460,7 +460,7 @@
+             select(PaperEffectPosition).where(
+                 PaperEffectPosition.account_key == self._account_key,
+                 PaperEffectPosition.position_id == position_id,
+-            ).with_for_update()
++            ).with_for_update().execution_options(populate_existing=True)
+         )).scalar_one_or_none()
+         if position is None or position.context != self._snapshot():
+             raise ValueError("Paper position not found or context does not match")
+@@ -480,15 +480,15 @@
+             raise ValueError("Invalid paper entry position identity")
+         intent_id = position_id.removeprefix("paper_")
+         intent = (await db.execute(
+-            select(ExecutionIntent).where(ExecutionIntent.intent_id == intent_id).with_for_update()
++            select(ExecutionIntent).where(ExecutionIntent.intent_id == intent_id).with_for_update().execution_options(populate_existing=True)
+         )).scalar_one_or_none()
+         if intent is None:
+             raise ValueError("Execution intent missing; reconciliation required")
+         trade = (await db.execute(
+-            select(Trade).where(Trade.intent_id == intent_id).with_for_update()
++            select(Trade).where(Trade.intent_id == intent_id).with_for_update().execution_options(populate_existing=True)
+         )).scalar_one_or_none()
+         authority = (await db.execute(
+-            select(ProtectionAuthority).where(ProtectionAuthority.intent_id == intent_id).with_for_update()
++            select(ProtectionAuthority).where(ProtectionAuthority.intent_id == intent_id).with_for_update().execution_options(populate_existing=True)
+         )).scalar_one_or_none()
+         if authority is None:
+             raise ValueError("Protection authority missing; reconciliation required")
+@@ -789,6 +789,13 @@
+         attempt.lease_until = None
+ 
+     def _manual_close_matches(self, intent, trade, authority, position, entry, payload, remaining):
++        from paper.close_validation import validated_entry_costs
++        if trade is None:
++            return False
++        try:
++            validated_entry_costs(self._context, trade, entry)
++        except (ExposureBlocked, KeyError, TypeError, ValueError, InvalidOperation):
++            return False
+         snapshot = self._snapshot()
+         trade_snapshot = dict(trade.execution_context or {}) if trade is not None else {}
+         trade_snapshot.pop("paper_costs", None)
+@@ -929,20 +936,15 @@
+                         reason=reason, price=execution_price, candle=candle, timeframe=timeframe,
+                     ):
+                         raise ValueError("Persisted partial stop owns the close decision")
+-                costs = (trade.execution_context or {}).get("paper_costs")
+-                try:
+-                    if not isinstance(costs, dict):
+-                        raise ValueError("Missing paper costs")
+-                    numbers = [Decimal(str(costs[key])) for key in (
+-                        "spread_price", "slippage_price", "commission_rate"
+-                    )]
+-                    if any(not number.is_finite() or number < 0 for number in numbers):
+-                        raise ValueError("Invalid paper costs")
+-                    offset = numbers[0] + numbers[1]
+-                    if trade.side == "buy" and execution_price <= offset:
+-                        raise ValueError("Costs exceed execution price")
+-                except (KeyError, InvalidOperation, TypeError) as exc:
+-                    raise ValueError("Invalid paper costs; reconciliation required") from exc
++                from paper.close_validation import validated_entry_costs
++                entry = await db.get(PaperEffectOperation, (
++                    self._account_key, position_id, "entry:" + intent.intent_id,
++                ))
++                cost_model = validated_entry_costs(self._context, trade, entry)
++                costs = entry.payload["paper_costs"]
++                offset = cost_model.spread_price + cost_model.slippage_price
++                if trade.side == "buy" and execution_price <= offset:
++                    raise ValueError("Costs exceed execution price")
+                 payload = {
+                     "kind": "reduce", "intent_id": intent.intent_id, "position_id": position_id,
+                     "trade_id": trade_id, "identity": self._snapshot(),
+diff --git a/backend/tasks/trading_tasks.py b/backend/tasks/trading_tasks.py
+--- a/backend/tasks/trading_tasks.py
++++ b/backend/tasks/trading_tasks.py
+@@ -578,6 +578,15 @@
+                             )
+                         ).scalar_one_or_none()
+                         await db.commit()
++                    if (existing_trade is not None and existing_trade.status == "closed"
++                            and is_durable_paper_position(existing_trade.position_id)):
++                        completed = await svc.mark_entry_executed(approval_id, claim_token)
++                        if completed is None:
++                            logger.error("[didi] Aprovação %s: fechamento ainda não comprovado", approval_id)
++                        else:
++                            logger.info("[didi] Aprovação %s reconciliada com posição encerrada: %s",
++                                        approval_id, completed["status"])
++                        continue
+                     if (existing_trade is not None
+                             and not is_durable_paper_position(existing_trade.position_id)
+                             and not is_durable_paper_position(intent_position_id)):
+@@ -822,7 +831,8 @@
+                     )
+                     continue
+                 try:
+-                    await notifier.send_message(format_position_opened(trade))
++                    if trade.status == "open":
++                        await notifier.send_message(format_position_opened(trade))
+                 except Exception as notify_exc:
+                     logger.error(
+                         "[didi] Posição aberta, mas notificação falhou (%s): %s",
+@@ -868,7 +878,8 @@
+                         )
+                         if completed is not None:
+                             try:
+-                                await notifier.send_message(format_position_opened(trade))
++                                if trade.status == "open":
++                                    await notifier.send_message(format_position_opened(trade))
+                             except Exception as notify_exc:
+                                 logger.error(
+                                     "[didi] Posição aberta, mas notificação falhou (%s): %s",
+diff --git a/backend/tests/integration/test_closed_approval_recovery.py b/backend/tests/integration/test_closed_approval_recovery.py
+new file mode 100644
+--- /dev/null
++++ b/backend/tests/integration/test_closed_approval_recovery.py
+@@ -0,0 +1,267 @@
++import asyncio
++from datetime import datetime, timedelta, timezone
++from decimal import Decimal
++from unittest.mock import AsyncMock
++
++import pandas as pd
++import pytest
++from sqlalchemy import select, text
++
++from config import settings
++from db.models import EntryApproval, ExecutionIntent, Trade, TradeEvent
++from paper.durable_effects import DurablePaperEffects, PaperEffectOperation, PaperEffectPosition
++from tasks.trading_tasks import _monitor_paper_candles
++from tests.integration.test_approval_lifecycle import approval_database
++from tests.integration.test_durable_approval_entry import approval_flow, expire_approval_and_protection
++from tests.integration.test_paper_durable_effects import effect_sessions
++from tests.integration.test_paper_monitor import frame, monitor_env
++from trading.connectors.memory_transport import MemoryTransport
++from trading.connectors.simulated import SimulatedConnector
++from trading.order_executor import OrderExecutor
++
++
++async def awaiting_ack(flow, monkeypatch, *, partial=False):
++    original_ack = flow.service.mark_entry_executed
++    original_create = MemoryTransport.durable_create
++    if partial:
++        async def create_partial(self, intent):
++            self.scenarios[intent.id] = Decimal("0.5")
++            return await original_create(self, intent)
++        monkeypatch.setattr(MemoryTransport, "durable_create", create_partial)
++    monkeypatch.setattr(flow.service, "mark_entry_executed", AsyncMock(return_value=None))
++    await flow.task()
++    monkeypatch.setattr(flow.service, "mark_entry_executed", original_ack)
++    monkeypatch.setattr(MemoryTransport, "durable_create", original_create)
++    async with flow.sessions() as db:
++        approval = await db.get(EntryApproval, flow.approval_id)
++        trade = (await db.execute(select(Trade).where(Trade.intent_id == flow.intent_id))).scalar_one()
++        assert approval.status == "executing" and trade.status == "open"
++        return trade.id
++
++
++async def close_before_ack(flow, monkeypatch, redis, *, partial=False, manual=False):
++    trade_id = await awaiting_ack(flow, monkeypatch, partial=partial)
++    if manual:
++        connector = SimulatedConnector(flow.context, transport=MemoryTransport(
++            flow.context, durable_effects=DurablePaperEffects(flow.sessions, flow.context),
++        ))
++        async with flow.sessions() as db:
++            trade = await db.get(Trade, trade_id)
++            await OrderExecutor(connector, db).close_position(trade, execution_price=Decimal("105"))
++    else:
++        async with flow.sessions() as db:
++            trade = await db.get(Trade, trade_id)
++            data = frame()
++            start = pd.Timestamp(trade.open_at).floor("h") - pd.Timedelta(hours=75)
++            data["timestamp"] = pd.date_range(start, periods=len(data), freq="h")
++            trade.paper_monitor_candle_at = data.loc[75, "timestamp"].to_pydatetime()
++            trade.paper_monitor_timeframe = "1h"
++            await db.commit()
++        data.loc[76, "low"] = 94
++        await _monitor_paper_candles(flow.sessions, trade_id, data, settings, redis)
++    async with flow.sessions() as db:
++        assert (await db.get(Trade, trade_id)).status == "closed"
++    return trade_id
++
++
++async def assert_resolution(flow, trade_id, status):
++    async with flow.sessions() as db:
++        approval = await db.get(EntryApproval, flow.approval_id)
++        trade = await db.get(Trade, trade_id)
++        intent = (await db.execute(select(ExecutionIntent).where(ExecutionIntent.intent_id == flow.intent_id))).scalar_one()
++        position = (await db.execute(select(PaperEffectPosition))).scalar_one()
++        assert approval.status == status and approval.dedupe_key is None
++        assert approval.claim_token is None and approval.lease_until is None
++        assert position.quantity == 0 and trade.status == "closed"
++        assert intent.capital_amount == flow.capital_amount and intent.risk_amount == flow.risk_amount
++        assert intent.order_terminal is True
++        assert intent.status == ("partial" if status == "closed_partial" else "confirmed")
++        assert Decimal(approval.payload["quantity"]) == intent.quantity == 1
++        resolution = approval.payload["resolution"]
++        assert Decimal(resolution["filled_quantity"]) == trade.quantity == intent.filled_quantity
++        assert Decimal(resolution["unfilled_quantity"]) == intent.quantity - trade.quantity
++        assert resolution["close_operation_id"] == trade.close_order_id
++        events = (await db.execute(select(TradeEvent).where(TradeEvent.event_type == "APPROVAL_RESOLVED"))).scalars().all()
++        assert len(events) == 1 and events[0].payload["status"] == status
++        assert len((await db.execute(select(PaperEffectOperation).where(
++            PaperEffectOperation.operation_id.like("manual-close:%")
++        ))).scalars().all()) == 1
++    assert await flow.service.pop_approved_entries() == []
++
++
++@pytest.mark.asyncio
++@pytest.mark.parametrize("manual,workers", [(False, 1), (False, 2), (True, 1)])
++async def test_closed_entry_is_acknowledged_without_reopening(approval_flow, monitor_env, monkeypatch, manual, workers):
++    flow = approval_flow
++    trade_id = await close_before_ack(flow, monkeypatch, monitor_env, manual=manual)
++    await expire_approval_and_protection(flow)
++    monkeypatch.setattr(settings, "protection_evidence_provider", "")
++    async def no_effect(*args, **kwargs):
++        raise AssertionError("Closed execution must be acknowledged without any new effect")
++    monkeypatch.setattr(SimulatedConnector, "create_order", no_effect)
++    monkeypatch.setattr(SimulatedConnector, "modify_position_protection", no_effect)
++    monkeypatch.setattr(SimulatedConnector, "reduce_position", no_effect)
++    await asyncio.gather(*[flow.task() for _ in range(workers)])
++    await flow.task()
++    await assert_resolution(flow, trade_id, "executed")
++
++
++@pytest.mark.asyncio
++async def test_closed_partial_is_terminal_without_claiming_full_execution(approval_flow, monitor_env, monkeypatch):
++    flow = approval_flow
++    trade_id = await close_before_ack(flow, monkeypatch, monitor_env, partial=True)
++    await expire_approval_and_protection(flow)
++    await flow.task()
++    await assert_resolution(flow, trade_id, "closed_partial")
++    from api.routes.approvals import _normalize
++    result = _normalize(await flow.service.get_entry(flow.approval_id))
++    assert result.status == "closed_partial"
++    assert Decimal(result.resolution["filled_quantity"]) == Decimal("0.5")
++    # A terminal, accounted closure releases capacity and the approval dedupe key.
++    from db.models import BotConfig
++    from risk.manager import RiskManager
++    from risk.position_sizer import PositionSizer
++    from risk.drawdown_monitor import DrawdownMonitor
++    from risk.correlation_checker import CorrelationChecker
++    async with flow.sessions() as db:
++        config = (await db.execute(select(BotConfig))).scalar_one()
++        config.max_open_trades = 1
++        await db.commit()
++        risk = RiskManager(db, PositionSizer(), DrawdownMonitor(db), CorrelationChecker())
++        reserved = await risk.can_open_position(
++            "CRIPTO", "BTC/USDT", Decimal("100"), Decimal("95"),
++            side="buy", requested_quantity=Decimal("1"),
++        )
++        assert reserved.approved
++    new = await flow.service.create_pending_entry(
++        intent_id=reserved.intent_id, market="CRIPTO", symbol="BTC/USDT", side="buy", mode="paper",
++        entry_price=Decimal("100"), stop_loss=Decimal("95"), take_profit=Decimal("110"),
++        quantity=Decimal("1"), criteria={}, details={}, ttl_seconds=600,
++    )
++    assert new is not None and new["id"] != flow.approval_id and new["status"] == "pending"
++
++
++@pytest.mark.asyncio
++@pytest.mark.parametrize("field", ["commission", "pnl_net", "pnl_pct", "exit_value", "entry_value", "revision", "position", "event", "costs"])
++async def test_closed_flag_without_consistent_durable_proof_cannot_acknowledge(
++    approval_flow, monitor_env, monkeypatch, field,
++):
++    flow = approval_flow
++    trade_id = await close_before_ack(flow, monkeypatch, monitor_env)
++    async with flow.sessions() as db:
++        trade = await db.get(Trade, trade_id)
++        if field in {"commission", "pnl_net", "pnl_pct", "exit_value", "entry_value"}:
++            setattr(trade, field, getattr(trade, field) + 1)
++        elif field == "revision":
++            intent = (await db.execute(select(ExecutionIntent))).scalar_one()
++            intent.observation_revision += 1
++        elif field == "position":
++            (await db.execute(select(PaperEffectPosition))).scalar_one().quantity = Decimal("0.5")
++        elif field == "event":
++            event = (await db.execute(select(TradeEvent).where(TradeEvent.event_type == "SL_HIT"))).scalar_one()
++            event.payload = {**event.payload, "operation_id": "wrong-close"}
++        else:
++            trade.execution_context = {**trade.execution_context, "paper_costs": {
++                **trade.execution_context["paper_costs"], "commission_rate": "0.5",
++            }}
++        await db.commit()
++    await expire_approval_and_protection(flow)
++    await flow.task()
++    async with flow.sessions() as db:
++        approval = await db.get(EntryApproval, flow.approval_id)
++        assert approval.status == "executing" and approval.dedupe_key is not None
++        assert "resolution" not in approval.payload
++        assert not (await db.execute(select(TradeEvent).where(TradeEvent.event_type == "APPROVAL_RESOLVED"))).scalars().all()
++
++
++@pytest.mark.asyncio
++async def test_lost_acknowledgement_response_does_not_duplicate_resolution(approval_flow, monitor_env, monkeypatch):
++    flow = approval_flow
++    trade_id = await close_before_ack(flow, monkeypatch, monitor_env)
++    await expire_approval_and_protection(flow)
++    original = flow.service.mark_entry_executed
++    async def lost(*args, **kwargs):
++        result = await original(*args, **kwargs)
++        if result is not None:
++            raise TimeoutError("acknowledgement response lost after commit")
++        return result
++    monkeypatch.setattr(flow.service, "mark_entry_executed", lost)
++    await flow.task()
++    monkeypatch.setattr(flow.service, "mark_entry_executed", original)
++    await flow.task()
++    await assert_resolution(flow, trade_id, "executed")
++
++
++@pytest.mark.asyncio
++async def test_old_approval_claim_cannot_acknowledge_after_takeover(approval_flow, monitor_env, monkeypatch):
++    flow = approval_flow
++    trade_id = await close_before_ack(flow, monkeypatch, monitor_env)
++    async with flow.sessions() as db:
++        old = (await db.get(EntryApproval, flow.approval_id)).claim_token
++    await expire_approval_and_protection(flow)
++    claimed = await flow.service.pop_approved_entries()
++    new = claimed[0]["_claim_token"]
++    assert new != old
++    assert await flow.service.mark_entry_executed(flow.approval_id, old) is None
++    assert await flow.service.mark_entry_executed(flow.approval_id, new) is not None
++    await assert_resolution(flow, trade_id, "executed")
++
++
++@pytest.mark.asyncio
++@pytest.mark.parametrize("zero", [False, True])
++async def test_closed_flag_without_close_receipt_is_not_execution_proof(approval_flow, monkeypatch, zero):
++    flow = approval_flow
++    trade_id = await awaiting_ack(flow, monkeypatch)
++    async with flow.sessions() as db:
++        trade = await db.get(Trade, trade_id)
++        trade.status = "closed"
++        if zero:
++            (await db.execute(select(PaperEffectPosition))).scalar_one().quantity = 0
++        await db.commit()
++    await expire_approval_and_protection(flow)
++    await flow.task()
++    async with flow.sessions() as db:
++        assert (await db.get(EntryApproval, flow.approval_id)).status == "executing"
++
++
++@pytest.mark.asyncio
++async def test_approval_lease_is_rechecked_after_waiting_for_execution_locks(approval_flow, monitor_env, monkeypatch):
++    from trading import approval_service
++    flow = approval_flow
++    trade_id = await close_before_ack(flow, monkeypatch, monitor_env)
++    async with flow.sessions() as db:
++        claim = (await db.get(EntryApproval, flow.approval_id)).claim_token
++    async with flow.sessions() as blocker:
++        await blocker.execute(select(ExecutionIntent).where(ExecutionIntent.intent_id == flow.intent_id).with_for_update())
++        pid = (await blocker.execute(text("SELECT pg_backend_pid()"))).scalar_one()
++        worker = asyncio.create_task(flow.service.mark_entry_executed(flow.approval_id, claim))
++        try:
++            async def blocked():
++                while True:
++                    async with flow.sessions() as observer:
++                        count = (await observer.execute(text(
++                            "SELECT count(*) FROM pg_stat_activity WHERE :pid = ANY(pg_blocking_pids(pid))"
++                        ), {"pid": pid})).scalar_one()
++                    if count:
++                        return
++                    await asyncio.sleep(0.01)
++            await asyncio.wait_for(blocked(), 5)
++            class AfterLease(datetime):
++                @classmethod
++                def now(cls, tz=None):
++                    return datetime.now(tz) + timedelta(minutes=10)
++            monkeypatch.setattr(approval_service, "datetime", AfterLease)
++            await blocker.commit()
++            assert await asyncio.wait_for(worker, 5) is None
++        finally:
++            await blocker.rollback()
++            if not worker.done():
++                worker.cancel()
++                await asyncio.gather(worker, return_exceptions=True)
++    monkeypatch.setattr(approval_service, "datetime", datetime)
++    async with flow.sessions() as db:
++        row = await db.get(EntryApproval, flow.approval_id)
++        assert row.status == "executing" and "resolution" not in row.payload
++        assert not (await db.execute(select(TradeEvent).where(TradeEvent.event_type == "APPROVAL_RESOLVED"))).scalars().all()
++    assert await flow.service.mark_entry_executed(flow.approval_id, claim) is not None
++    await assert_resolution(flow, trade_id, "executed")
+diff --git a/backend/tests/integration/test_durable_close_cost_authority.py b/backend/tests/integration/test_durable_close_cost_authority.py
+new file mode 100644
+--- /dev/null
++++ b/backend/tests/integration/test_durable_close_cost_authority.py
+@@ -0,0 +1,112 @@
++import json
++from decimal import Decimal
++
++import pytest
++from sqlalchemy import select
++
++from config import settings
++from db.models import ExecutionIntent, Trade
++from paper.durable_effects import PaperEffectOperation, PaperEffectPosition, PaperProtectionAttempt
++from tests.integration.test_approval_lifecycle import approval_database
++from tests.integration.test_paper_durable_effects import effect_sessions
++from tests.integration.test_manual_paper_close import opened, close, expire_close_claim
++from trading.order_executor import OrderExecutionError
++
++
++async def change_costs(sessions, trade_id, key, value):
++    async with sessions() as db:
++        trade = await db.get(Trade, trade_id)
++        original = dict(trade.execution_context["paper_costs"])
++        trade.execution_context = {**trade.execution_context, "paper_costs": {**original, key: value}}
++        await db.commit()
++        return original
++
++
++async def restore_costs(sessions, trade_id, costs):
++    async with sessions() as db:
++        trade = await db.get(Trade, trade_id)
++        trade.execution_context = {**trade.execution_context, "paper_costs": costs}
++        await db.commit()
++
++
++@pytest.mark.asyncio
++@pytest.mark.parametrize("key,value", [("commission_rate", "0.5"), ("spread_price", "1"), ("slippage_price", "1")])
++async def test_changed_trade_costs_before_decision_are_rejected(effect_sessions, key, value):
++    connector, intent_id, trade_id = await opened(effect_sessions)
++    original = await change_costs(effect_sessions, trade_id, key, value)
++    with pytest.raises(OrderExecutionError, match="pending"):
++        await close(effect_sessions, connector, trade_id)
++    async with effect_sessions() as db:
++        trade = await db.get(Trade, trade_id)
++        intent = (await db.execute(select(ExecutionIntent))).scalar_one()
++        assert trade.status == "open" and trade.pnl_net is None
++        assert (await db.execute(select(PaperEffectPosition))).scalar_one().quantity == 1
++        assert intent.risk_amount == 20 and intent.capital_amount == 500
++        assert not (await db.execute(select(PaperProtectionAttempt).where(
++            PaperProtectionAttempt.operation_id.like("manual-close:%")
++        ))).scalars().all()
++    await restore_costs(effect_sessions, trade_id, original)
++    trade = await close(effect_sessions, connector, trade_id)
++    assert trade.commission == Decimal("0.20") and trade.pnl_net == Decimal("4.79")
++
++
++@pytest.mark.asyncio
++async def test_changed_configuration_does_not_change_captured_close_costs(effect_sessions, monkeypatch):
++    connector, _, trade_id = await opened(effect_sessions)
++    costs = json.loads(settings.paper_costs_json)
++    costs["BTC/USDT"].update(commission_rate="0.5", spread_price="1", slippage_price="1")
++    monkeypatch.setattr(settings, "paper_costs_json", json.dumps(costs))
++    trade = await close(effect_sessions, connector, trade_id)
++    assert trade.commission == Decimal("0.20") and trade.pnl_net == Decimal("4.79")
++
++
++@pytest.mark.asyncio
++async def test_cost_divergence_between_decision_and_effect_is_rejected(effect_sessions):
++    connector, _, trade_id = await opened(effect_sessions)
++    effects = connector._transport.durable_effects
++    position_id = (await connector.list_positions())[0].id
++    operation_id, fence, _ = await effects.prepare_manual_close(
++        position_id, trade_id=trade_id, quantity=Decimal("1"), reason="manual",
++        execution_price=Decimal("105"), owner="cost-test",
++    )
++    original = await change_costs(effect_sessions, trade_id, "commission_rate", "0.5")
++    with pytest.raises(ValueError, match="stale"):
++        await connector.reduce_position(position_id, Decimal("1"), intent_id=operation_id,
++                                        fence=fence, owner="cost-test", execution_price=Decimal("105"))
++    async with effect_sessions() as db:
++        assert (await db.execute(select(PaperEffectPosition))).scalar_one().quantity == 1
++        assert not (await db.execute(select(PaperEffectOperation).where(
++            PaperEffectOperation.operation_id == operation_id
++        ))).scalars().all()
++    await restore_costs(effect_sessions, trade_id, original)
++    await expire_close_claim(effect_sessions)
++    trade = await close(effect_sessions, connector, trade_id)
++    assert trade.commission == Decimal("0.20")
++
++
++@pytest.mark.asyncio
++async def test_cost_divergence_after_effect_prevents_wrong_accounting(effect_sessions, monkeypatch):
++    connector, _, trade_id = await opened(effect_sessions)
++    reduce = connector.reduce_position
++    original_costs = None
++    async with effect_sessions() as db:
++        initial_commission = (await db.get(Trade, trade_id)).commission
++    async def corrupt_after_effect(*args, **kwargs):
++        nonlocal original_costs
++        result = await reduce(*args, **kwargs)
++        original_costs = await change_costs(effect_sessions, trade_id, "commission_rate", "0.5")
++        return result
++    monkeypatch.setattr(connector, "reduce_position", corrupt_after_effect)
++    with pytest.raises(OrderExecutionError, match="pending"):
++        await close(effect_sessions, connector, trade_id)
++    async with effect_sessions() as db:
++        trade = await db.get(Trade, trade_id)
++        assert trade.status == "open" and trade.commission == initial_commission and trade.pnl_net is None
++        assert (await db.execute(select(PaperEffectPosition))).scalar_one().quantity == 0
++    await restore_costs(effect_sessions, trade_id, original_costs)
++    await expire_close_claim(effect_sessions)
++    async def no_reapply(*args, **kwargs):
++        raise AssertionError("Durable close receipt must be reused")
++    monkeypatch.setattr(connector, "reduce_position", no_reapply)
++    trade = await close(effect_sessions, connector, trade_id)
++    assert trade.commission == Decimal("0.20") and trade.pnl_net == Decimal("4.79")
+diff --git a/backend/trading/approval_service.py b/backend/trading/approval_service.py
+--- a/backend/trading/approval_service.py
++++ b/backend/trading/approval_service.py
+@@ -16,7 +16,7 @@
+ 
+ from config import settings
+ from database import AsyncSessionLocal
+-from db.models import EntryApproval, ExecutionIntent, Trade
++from db.models import EntryApproval, ExecutionIntent, Trade, TradeEvent
+ from trading.safety import require_entry_mode, require_paper_new_exposure
+ 
+ logger = logging.getLogger(__name__)
+@@ -29,7 +29,7 @@
+     _ALLOWED_TRANSITIONS = {
+         "pending": {"approved", "rejected", "expired", "failed"},
+         "approved": {"executing", "rejected", "expired", "failed"},
+-        "executing": {"executed", "failed", "expired"},
++        "executing": {"executed", "closed_partial", "failed", "expired"},
+     }
+ 
+     def __init__(
+@@ -283,7 +283,7 @@
+                     else:
+                         require_entry_mode(row.mode)
+ 
+-                if new_status == "executed":
++                if new_status in {"executed", "closed_partial"}:
+                     if (claim_token is None or row.lease_until is None
+                             or row.lease_until <= now):
+                         return None
+@@ -294,15 +294,54 @@
+                             .with_for_update()
+                         )
+                     ).scalar_one_or_none()
+-                    if intent is None or intent.status != "confirmed":
++                    if intent is None:
+                         return None
+                     trade = (await db.execute(
+                         select(Trade).where(Trade.intent_id == row.intent_id).with_for_update()
+                     )).scalar_one_or_none()
+-                    if trade is None or trade.status != "open":
++                    if trade is None or trade.status not in {"open", "closed"}:
+                         return None
+                     from trading.paper_trader import is_durable_paper_position
+-                    if row.mode == "paper" and (
++                    durable_paper = row.mode == "paper" and (
++                        is_durable_paper_position(trade.position_id)
++                        or is_durable_paper_position(intent.position_id)
++                    )
++                    if trade.status == "closed":
++                        if not durable_paper:
++                            return None
++                        from paper.close_validation import closed_trade_proof
++                        from paper.safe_break import _effects
++                        from trading.safety import ExposureBlocked
++                        try:
++                            effects, _ = _effects(self._sessions, dict(trade.execution_context or {}))
++                            proof = await closed_trade_proof(db, effects, trade.position_id)
++                            if (proof is None
++                                    or (trade.market, trade.mode, trade.symbol, trade.side)
++                                    != (row.market, row.mode, row.symbol, row.side)
++                                    or Decimal(str(row.payload["quantity"])) != intent.quantity):
++                                return None
++                            from db.models import ProtectionAuthority
++                            authority = await db.get(ProtectionAuthority, row.intent_id)
++                            if (authority is None
++                                    or authority.entry_price != Decimal(str(row.payload["entry_price"]))
++                                    or authority.initial_stop_loss != Decimal(str(row.payload["stop_loss"]))
++                                    or authority.initial_take_profit != Decimal(str(row.payload["take_profit"]))):
++                                return None
++                            if proof["outcome"] == "closed_partial":
++                                new_status = "closed_partial"
++                            elif new_status == "closed_partial":
++                                return None
++                            row.payload = {**row.payload, "resolution": proof}
++                            db.add(TradeEvent(
++                                trade_id=trade.id, event_type="APPROVAL_RESOLVED",
++                                payload={"approval_id": row.approval_id, "status": new_status, **proof},
++                            ))
++                        except (ExposureBlocked, ValueError, KeyError, TypeError, InvalidOperation) as exc:
++                            logger.error("[approval] Fechamento não comprovado para %s: %s", row.intent_id, exc)
++                            return None
++                    elif new_status == "closed_partial" or intent.status != "confirmed":
++                        return None
++                    elif row.mode == "paper" and (
+                         is_durable_paper_position(trade.position_id)
+                         or is_durable_paper_position(intent.position_id)
+                     ):
+@@ -369,6 +408,12 @@
+                     elif intent is not None and intent.status not in {"failed"}:
+                         return None
+ 
++                # The trade/position locks may have waited beyond the approval lease.
++                if new_status in {"executed", "closed_partial"}:
++                    now = datetime.now(timezone.utc)
++                    if row.lease_until is None or row.lease_until <= now:
++                        await db.rollback()
++                        return None
+                 row.status = new_status
+                 row.updated_at = now
+                 if new_status not in self._ACTIVE_STATES:
+diff --git a/docs/stories/2.2.engine-execucao-ordens.md b/docs/stories/2.2.engine-execucao-ordens.md
+--- a/docs/stories/2.2.engine-execucao-ordens.md
++++ b/docs/stories/2.2.engine-execucao-ordens.md
+@@ -404,6 +404,43 @@
+ 
+ O contrato continua limitado ao simulador PostgreSQL. Nenhum cancelamento de
+ broker ou provider operacional foi habilitado. Uma posição sem proteção atual
+-comprovada permanece bloqueada pelo gate existente. A resolução da aprovação
+-que ainda está `executing` quando o Trade fecha continua sendo uma pendência
+-separada; o cancelamento parcial não declara a aprovação executada.
++comprovada permanece bloqueada pelo gate existente. A resolução da aprovação que ainda está `executing` quando o Trade fecha
++segue a prova de encerramento descrita abaixo; uma entrada parcial encerrada
++não é declarada como execução integral.
++
++
++### Aprovação recuperada após o fechamento e autoridade dos custos
++
++Uma aprovação paper ainda `executing` pode ser resolvida após o fechamento,
++sem consultar nova cotação, reaplicar proteção, reenviar entrada ou reduzir
++novamente a posição. O serviço exige claim vigente e relê o estado sob locks
++na ordem intent, Trade, autoridade e posição. O lease é conferido outra vez
++após eventual espera pelos locks.
++
++A prova exige posição zerada, entrada terminal, identidade/quantidade/revisão
++consistentes, decisão e recibo imutáveis de fechamento correspondentes ao
++`close_order_id`, cursor confirmado, evento de fechamento e contabilização
++consistente de preço, valor, comissão e PnL. O flag `Trade.status=closed`,
++isoladamente, nunca comprova o encerramento. Prova ausente ou divergente mantém
++a aprovação recuperável e sua deduplicação ativa.
++
++Para entrada integral, a aprovação passa a `executed`. Se a execução foi parcial,
++mas terminal e encerrada, passa a `closed_partial`, exibido como “Parcial
++encerrada”; a quantidade solicitada original permanece no payload. A resolução
++guarda as quantidades executada e não executada, Trade e operação de fechamento,
++e produz um único evento `APPROVAL_RESOLVED`. Claim e deduplicação só são liberados
++no mesmo commit da resolução. O estado do intent e a contabilização do Trade não
++são reescritos por esse reconhecimento. Não há notificação falsa de posição aberta
++para um Trade que já está encerrado.
++
++Antes de persistir qualquer decisão de fechamento durável, os custos do Trade
++são comparados ao payload imutável da entrada. O preço e valor de entrada também
++devem corresponder à média executada e aos custos capturados. A mesma validação
++ocorre no efeito e na confirmação, que relê os objetos ORM sob lock para não
++aceitar uma cópia antiga da sessão. Alterações posteriores na configuração global
++de custos não modificam os custos de uma entrada já executada. Divergência no
++snapshot do Trade exige reconciliação explícita; não é corrigida silenciosamente.
++
++Não há alteração de schema nesta etapa; o head permanece `019`. O novo estado
++de aprovação usa a coluna textual já existente. Execução externa e provider
++operacional permanecem sem habilitação.
+diff --git a/frontend/app/approvals/page.tsx b/frontend/app/approvals/page.tsx
+--- a/frontend/app/approvals/page.tsx
++++ b/frontend/app/approvals/page.tsx
+@@ -8,7 +8,7 @@
+ 
+ type Filter = EntryApproval['status'] | 'all'
+ 
+-const FILTERS: Filter[] = ['pending', 'approved', 'executing', 'executed', 'rejected', 'failed', 'all']
++const FILTERS: Filter[] = ['pending', 'approved', 'executing', 'executed', 'closed_partial', 'rejected', 'failed', 'all']
+ 
+ export default function ApprovalsPage() {
+   const qc = useQueryClient()
+@@ -73,7 +73,7 @@
+                   : 'border-slate-700 text-slate-300 hover:bg-slate-800',
+               ].join(' ')}
+             >
+-              {f}
++              {f === 'closed_partial' ? 'Parcial encerrada' : f}
+             </button>
+           ))}
+         </div>
+diff --git a/frontend/components/EntryApprovalCard.tsx b/frontend/components/EntryApprovalCard.tsx
+--- a/frontend/components/EntryApprovalCard.tsx
++++ b/frontend/components/EntryApprovalCard.tsx
+@@ -127,7 +127,7 @@
+               {isBuy ? 'Compra' : 'Venda'}
+             </span>
+             <span className="rounded-full border border-slate-700 px-2 py-0.5 text-xs uppercase text-slate-300">
+-              {approval.status}
++              {approval.status === 'closed_partial' ? 'Parcial encerrada' : approval.status}
+             </span>
+           </div>
+           <p className="text-xs text-slate-400">
+@@ -264,6 +264,11 @@
+             </div>
+           )}
+ 
++          {approval.resolution && (
++            <p className="text-sm text-slate-300">
++              Posição encerrada. Quantidade executada: {approval.resolution.filled_quantity} de {approval.resolution.requested_quantity}.
++            </p>
++          )}
+           {approval.error && <p className="text-xs text-red-400">Erro: {approval.error}</p>}
+         </div>
+       </div>
+diff --git a/frontend/lib/api.ts b/frontend/lib/api.ts
+--- a/frontend/lib/api.ts
++++ b/frontend/lib/api.ts
+@@ -245,7 +245,7 @@
+ 
+ export interface EntryApproval {
+   id: string
+-  status: 'pending' | 'approved' | 'rejected' | 'executing' | 'executed' | 'failed'
++  status: 'pending' | 'approved' | 'rejected' | 'executing' | 'executed' | 'closed_partial' | 'failed'
+   market: string
+   symbol: string
+   side: 'buy' | 'sell'
+@@ -268,6 +268,15 @@
+   created_at: string
+   expires_at: string
+   updated_at?: string | null
++  resolution?: {
++    outcome: 'closed' | 'closed_partial'
++    requested_quantity: string
++    filled_quantity: string
++    unfilled_quantity: string
++    trade_id: number
++    close_operation_id: string
++    reason: string
++  } | null
+   error?: string | null
+ }
+ 

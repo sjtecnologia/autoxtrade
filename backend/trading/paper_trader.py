@@ -1,0 +1,208 @@
+"""Paper trader: simula execução de ordens sem enviar para a exchange real."""
+import logging
+from decimal import Decimal
+
+import redis.asyncio as aioredis
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from config import settings
+from db.models import ExecutionIntent, Trade, TradeEvent
+from trading.connectors.types import OrderSide
+from trading.contracts import ExecutionContext, ExecutionMode
+from trading.safety import ExposureBlocked, require_paper_new_exposure
+from paper.costs import paper_costs_for
+
+logger = logging.getLogger(__name__)
+
+# Legacy rates used only to close paper positions created before per-symbol costs.
+SIMULATED_SPREAD = Decimal("0.001")
+SIMULATED_COMMISSION = Decimal("0.001")
+
+
+def is_durable_paper_position(position_id: str | None) -> bool:
+    return isinstance(position_id, str) and position_id.startswith("paper_")
+
+
+class PaperTrader:
+    """Gerencia trades simulados monitorando preços via Redis."""
+
+    def __init__(self, db: AsyncSession, market: str = "CRIPTO", *, context: ExecutionContext | None = None) -> None:
+        self._db = db
+        self._market = market
+        self._redis: aioredis.Redis | None = None
+        self._context = context
+
+    async def startup(self) -> None:
+        self._redis = aioredis.from_url(settings.redis_url, decode_responses=True)
+
+    async def shutdown(self) -> None:
+        if self._redis:
+            await self._redis.aclose()
+
+    async def open_position(
+        self,
+        symbol: str,
+        side: OrderSide,
+        quantity: Decimal,
+        entry_price: Decimal,
+        stop_loss: Decimal,
+        take_profit: Decimal | None,
+        model_version: str | None = None,
+        ml_confidence: Decimal | None = None,
+        intent_id: str | None = None,
+    ) -> Trade:
+        """Cria um trade simulado no banco."""
+        require_paper_new_exposure(symbol)
+        costs = paper_costs_for(symbol)
+        context = self._context
+        if type(context) is not ExecutionContext:
+            raise ExposureBlocked("Paper opening requires server-side execution identity")
+        context.validate()
+        if context.mode != ExecutionMode.PAPER or context.market != self._market or context.instrument.symbol != symbol:
+            raise ExposureBlocked("Paper request conflicts with bound identity")
+        context.instrument.validate(quantity, entry_price)
+        spread = costs.spread_price + costs.slippage_price
+        simulated_entry = (
+            entry_price + spread if side == OrderSide.BUY else entry_price - spread
+        )
+        exchange = context.venue
+        execution_snapshot = context.snapshot()
+        execution_snapshot["paper_costs"] = costs.as_dict()
+        contract_size = context.instrument.contract_size
+        intent = None
+        if intent_id is not None:
+            result = await self._db.execute(
+                select(ExecutionIntent)
+                .where(ExecutionIntent.intent_id == intent_id)
+                .with_for_update()
+            )
+            intent = result.scalar_one_or_none()
+            if (
+                intent is None
+                or intent.status != "reserved"
+                or intent.market != self._market
+                or intent.mode != "paper"
+                or intent.symbol != symbol
+                or intent.side != side.value
+                or intent.quantity != quantity
+            ):
+                raise ExposureBlocked("Paper entry does not match its active risk reservation")
+            intent.status = "confirmed"
+            intent.result_state = "confirmed"
+            intent.filled_quantity = quantity
+        trade = Trade(
+            market=self._market,
+            exchange=exchange,
+            symbol=symbol,
+            side=side.value,
+            status="open",
+            mode="paper",
+            account_id=context.account_id,
+            account_nature=context.nature.value,
+            instrument_class=context.instrument.asset_class,
+            execution_context=execution_snapshot,
+            identity_status="bound",
+            entry_price=simulated_entry,
+            quantity=quantity,
+            entry_value=(simulated_entry * quantity * contract_size).quantize(Decimal("0.01")),
+            risk_amount=intent.risk_amount if intent is not None else None,
+            capital_amount=intent.capital_amount if intent is not None else None,
+            intent_id=intent_id,
+            stop_loss=stop_loss,
+            take_profit=take_profit,
+            open_at=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+            model_version=model_version,
+            ml_confidence=ml_confidence,
+        )
+        self._db.add(trade)
+        self._db.add(
+            TradeEvent(
+                trade=trade,
+                event_type="ORDER_SENT",
+                payload={"mode": "paper", "symbol": symbol, "side": side.value,
+                         "paper_costs": costs.as_dict(), "contract_size": str(contract_size)},
+            )
+        )
+        await self._db.commit()
+        await self._db.refresh(trade)
+        logger.info("[paper] Posição aberta: %s %s @ %s", side.value.upper(), symbol, simulated_entry)
+        return trade
+
+    async def check_stops(self, trade: Trade) -> None:
+        """Verifica se TP ou SL foram atingidos para um trade paper aberto."""
+        if not self._redis:
+            return
+        cached = await self._redis.get(f"price:{trade.symbol}")
+        if not cached:
+            return
+        current_price = Decimal(cached)
+        side = trade.side
+        sl = trade.stop_loss
+        tp = trade.take_profit
+
+        hit_sl = (side == "buy" and current_price <= sl) or (side == "sell" and current_price >= sl)
+        hit_tp = tp and (
+            (side == "buy" and current_price >= tp) or (side == "sell" and current_price <= tp)
+        )
+
+        if hit_tp or hit_sl:
+            reason = "TP_HIT" if hit_tp else "SL_HIT"
+            exit_price = (tp if hit_tp else sl) or current_price
+            await self._close_position(trade, exit_price, reason)
+
+    async def _close_position(self, trade: Trade, exit_price: Decimal, reason: str) -> None:
+        import datetime
+
+        if is_durable_paper_position(trade.position_id):
+            raise ExposureBlocked(
+                f"Paper trade {trade.id} has a position identity; durable close requires reconciliation"
+            )
+        qty = trade.quantity
+        entry = trade.entry_price
+        side_mult = Decimal("1") if trade.side == "buy" else Decimal("-1")
+        snapshot = trade.execution_context or {}
+        cost_data = snapshot.get("paper_costs") or {}
+        try:
+            spread_price = Decimal(str(cost_data["spread_price"]))
+            commission_rate = Decimal(str(cost_data["commission_rate"]))
+            slippage_price = Decimal(str(cost_data["slippage_price"]))
+        except (KeyError, ValueError):
+            # Existing open trades predate symbol-specific costs; preserve their legacy model.
+            spread_price = Decimal("0")
+            commission_rate = SIMULATED_COMMISSION
+            slippage_price = Decimal("0")
+        spec = snapshot.get("instrument") or {}
+        contract_size = (
+            Decimal(str(spec.get("contract_size") or "1"))
+            if cost_data else Decimal("1")
+        )
+        spread = spread_price + slippage_price
+        simulated_exit = exit_price - spread if trade.side == "buy" else exit_price + spread
+
+        pnl_gross = (simulated_exit - entry) * qty * contract_size * side_mult
+        commission = (entry + simulated_exit) * qty * contract_size * commission_rate
+        pnl_net = pnl_gross - commission
+        pnl_pct = pnl_net / trade.entry_value * 100 if trade.entry_value else Decimal("0")
+
+        trade.status = "closed"
+        trade.exit_price = simulated_exit
+        trade.exit_value = (simulated_exit * qty * contract_size).quantize(Decimal("0.01"))
+        trade.close_at = datetime.datetime.now(datetime.timezone.utc)
+        trade.close_reason = reason
+        trade.pnl_gross = pnl_gross.quantize(Decimal("0.01"))
+        trade.commission = commission.quantize(Decimal("0.01"))
+        trade.pnl_net = pnl_net.quantize(Decimal("0.01"))
+        trade.pnl_pct = pnl_pct.quantize(Decimal("0.0001"))
+        trade.duration_sec = int(
+            (trade.close_at - trade.open_at).total_seconds()
+        )
+        self._db.add(
+            TradeEvent(
+                trade=trade,
+                event_type=reason,
+                payload={"exit_price": str(simulated_exit), "pnl_net": str(pnl_net)},
+            )
+        )
+        await self._db.commit()
+        logger.info("[paper] Posição fechada: %s via %s @ %s | PnL: %s", trade.symbol, reason, simulated_exit, pnl_net)

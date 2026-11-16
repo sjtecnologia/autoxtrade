@@ -1,0 +1,17 @@
+diff --git a/backend/integration/market_data_request.py b/backend/integration/market_data_request.py
+new file mode 100644
++Wrapper fail-closed com whitelist de comandos de dados, payload ASCII sem newline,
++slot DWX_Commands_0.txt, IDs crescentes e espera pelo consumo do EA.
+
+diff --git a/backend/tests/unit/test_market_data_request.py b/backend/tests/unit/test_market_data_request.py
+new file mode 100644
++Testes de payload exato, não sobrescrita e rejeição de comandos de ordem antes da escrita.
+
+diff --git a/docs/correcao/resolucao-market-data.md b/docs/correcao/resolucao-market-data.md
+@@
++Comandos 10001, 10002 e 10003 consumidos pelo EA.
++Market data, barra M5 e histórico populados e validados.
+
+diff --git a/docs/correcao/ESTADO.md b/docs/correcao/ESTADO.md
+@@
++Achado 07 resolvido: canal _0 confirmado e alimentação inicial concluída.

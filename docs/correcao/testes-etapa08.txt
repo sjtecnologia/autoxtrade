@@ -1,0 +1,39 @@
+Correção AutoXTrade - Etapa 08: piloto paper-trading simulado
+Data: 2026-09-25
+Runtime: backend/.venv/bin/python (Python 3.12)
+
+Decisão ACHADO 07a
+- DWX_Market_Data.txt permanece vazio ({}) e foi classificado como ausente/não fresco.
+- O piloto não fingiu feed real: usou fonte sintética determinística explicitamente rotulada `synthetic_seed_20250925`.
+- Nenhum conteúdo foi inventado como se viesse do MT5.
+
+Piloto real
+$ AUTOXTRADE_MT5_FILES_DIR=/Volumes/MT5Files/DWX .venv/bin/python -m paper.run --iterations 5 --datadir /Volumes/MT5Files/DWX
+- 5 iterações
+- modo de dados: synthetic_seed_20250925
+- símbolo: EURUSD.pr
+- sinais: 0
+- ordens simuladas gravadas: 0
+- posições: availability=missing (DWX_Positions_* ausente; não interpretado como zero saudável)
+- divergências/órfãos: 0
+- ZERO comandos DWX escritos; ZERO ordens reais; ZERO mutações
+
+Dry-run
+$ AUTOXTRADE_MT5_FILES_DIR=/Volumes/MT5Files/DWX .venv/bin/python -m integration.monitor_dry_run --iterations 5
+- 5 iterações, 0 divergências em cada uma
+- ZERO comandos e ZERO mutações
+
+Cobertura controlada do ledger
+$ .venv/bin/python -m pytest tests/unit/test_paper_run.py tests/unit/test_reconciliation.py -q --tb=short
+7 passed
+- teste controlado com sinal determinístico gravou status=simulated e price_source=synthetic_seed_20250925.
+- nenhum DWX_Commands_* foi criado.
+
+Suíte gated
+$ .venv/bin/python -m pytest tests/ -q -rx --tb=short
+131 passed, 0 xfailed
+
+$ .venv/bin/python -m pytest tests/unit/test_safety.py -q --tb=short
+31 passed
+
+O gate fail-closed de backend/trading/safety.py permaneceu intacto. O ledger paper só é escrito localmente pelo modo papel; execução real continua bloqueada.

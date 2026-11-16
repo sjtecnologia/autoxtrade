@@ -1,0 +1,32 @@
+Correção AutoXTrade - Etapa 06: validação ML e estratégia DiDi
+Data: 2026-09-25
+Runtime: backend/.venv/bin/python (Python 3.12)
+
+Comparativo
+- Antes da etapa 06: 127 passed / 1 xfailed; F05 era xfail strict.
+- Depois da etapa 06: 129 passed / 0 xfailed.
+
+Comandos e resultados
+
+$ .venv/bin/python -m pytest tests/ -q -rx --tb=short
+129 passed, 1 warning
+
+$ .venv/bin/python -m pytest tests/unit/test_safety.py -q --tb=short
+31 passed, 1 warning
+
+$ .venv/bin/python -m pytest tests/unit/test_regressions_pending.py --runxfail -q --tb=short
+6 passed, 1 warning
+
+$ .venv/bin/python -m pytest tests/unit/test_didi_strategy.py -q --tb=short
+3 passed, 1 warning
+
+$ .venv/bin/python -m pytest tests/unit/test_regressions_pending.py::test_didi_rejects_bad_validation_metrics -q --tb=short
+1 passed, 1 warning
+
+Correções
+- F05: o perfil DiDi não pode mais ignorar os gates de performance; folds com PF, win rate, trades, expectancy, drawdown ou dispersão inválidos rejeitam o treinamento.
+- O xfail strict de F05 foi removido. O teste agora é obrigatório e comprova a rejeição de métricas ruins.
+- ModelPredictor só desserializa modelos e scalers dentro de ml/models; caminhos externos levantam ModelNotFoundError antes de joblib.load.
+- Saídas de ML continuam sendo leitura/sugestão; nenhum caminho da estratégia DiDi libera execução real.
+- backend/trading/safety.py permaneceu intacto e o gate fail-closed continua ativo.
+- Nenhum modelo externo, conexão MT5, corretora ou ordem real foi usado nesta validação.

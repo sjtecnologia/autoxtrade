@@ -460,7 +460,7 @@ class DurablePaperEffects:
             select(PaperEffectPosition).where(
                 PaperEffectPosition.account_key == self._account_key,
                 PaperEffectPosition.position_id == position_id,
-            ).with_for_update()
+            ).with_for_update().execution_options(populate_existing=True)
         )).scalar_one_or_none()
         if position is None or position.context != self._snapshot():
             raise ValueError("Paper position not found or context does not match")
@@ -480,15 +480,15 @@ class DurablePaperEffects:
             raise ValueError("Invalid paper entry position identity")
         intent_id = position_id.removeprefix("paper_")
         intent = (await db.execute(
-            select(ExecutionIntent).where(ExecutionIntent.intent_id == intent_id).with_for_update()
+            select(ExecutionIntent).where(ExecutionIntent.intent_id == intent_id).with_for_update().execution_options(populate_existing=True)
         )).scalar_one_or_none()
         if intent is None:
             raise ValueError("Execution intent missing; reconciliation required")
         trade = (await db.execute(
-            select(Trade).where(Trade.intent_id == intent_id).with_for_update()
+            select(Trade).where(Trade.intent_id == intent_id).with_for_update().execution_options(populate_existing=True)
         )).scalar_one_or_none()
         authority = (await db.execute(
-            select(ProtectionAuthority).where(ProtectionAuthority.intent_id == intent_id).with_for_update()
+            select(ProtectionAuthority).where(ProtectionAuthority.intent_id == intent_id).with_for_update().execution_options(populate_existing=True)
         )).scalar_one_or_none()
         if authority is None:
             raise ValueError("Protection authority missing; reconciliation required")
@@ -789,6 +789,13 @@ class DurablePaperEffects:
         attempt.lease_until = None
 
     def _manual_close_matches(self, intent, trade, authority, position, entry, payload, remaining):
+        from paper.close_validation import validated_entry_costs
+        if trade is None:
+            return False
+        try:
+            validated_entry_costs(self._context, trade, entry)
+        except (ExposureBlocked, KeyError, TypeError, ValueError, InvalidOperation):
+            return False
         snapshot = self._snapshot()
         trade_snapshot = dict(trade.execution_context or {}) if trade is not None else {}
         trade_snapshot.pop("paper_costs", None)
@@ -929,20 +936,15 @@ class DurablePaperEffects:
                         reason=reason, price=execution_price, candle=candle, timeframe=timeframe,
                     ):
                         raise ValueError("Persisted partial stop owns the close decision")
-                costs = (trade.execution_context or {}).get("paper_costs")
-                try:
-                    if not isinstance(costs, dict):
-                        raise ValueError("Missing paper costs")
-                    numbers = [Decimal(str(costs[key])) for key in (
-                        "spread_price", "slippage_price", "commission_rate"
-                    )]
-                    if any(not number.is_finite() or number < 0 for number in numbers):
-                        raise ValueError("Invalid paper costs")
-                    offset = numbers[0] + numbers[1]
-                    if trade.side == "buy" and execution_price <= offset:
-                        raise ValueError("Costs exceed execution price")
-                except (KeyError, InvalidOperation, TypeError) as exc:
-                    raise ValueError("Invalid paper costs; reconciliation required") from exc
+                from paper.close_validation import validated_entry_costs
+                entry = await db.get(PaperEffectOperation, (
+                    self._account_key, position_id, "entry:" + intent.intent_id,
+                ))
+                cost_model = validated_entry_costs(self._context, trade, entry)
+                costs = entry.payload["paper_costs"]
+                offset = cost_model.spread_price + cost_model.slippage_price
+                if trade.side == "buy" and execution_price <= offset:
+                    raise ValueError("Costs exceed execution price")
                 payload = {
                     "kind": "reduce", "intent_id": intent.intent_id, "position_id": position_id,
                     "trade_id": trade_id, "identity": self._snapshot(),

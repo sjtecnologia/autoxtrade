@@ -1,0 +1,25 @@
+.E.E.E                                                                   [100%]
+=================================== ERRORS ====================================
+___________ ERROR at teardown of test_external_network_is_rejected ____________
+backend\tests\conftest.py:106: in enforce_isolation
+    assert len(_violations) == previous_count, "Isolation violations (even if swallowed): " + repr(_violations[previous_count:])
+E   AssertionError: Isolation violations (even if swallowed): ['Test attempted network access outside explicit local test endpoints']
+E   assert 1 == 0
+E    +  where 1 = len(['Test attempted network access outside explicit local test endpoints'])
+____________ ERROR at teardown of test_operational_dwx_is_rejected ____________
+backend\tests\conftest.py:106: in enforce_isolation
+    assert len(_violations) == previous_count, "Isolation violations (even if swallowed): " + repr(_violations[previous_count:])
+E   AssertionError: Isolation violations (even if swallowed): ['Test attempted operational DWX access']
+E   assert 2 == 1
+E    +  where 2 = len(['Test attempted network access outside explicit local test endpoints', 'Test attempted operational DWX access'])
+__________ ERROR at teardown of test_telegram_transport_is_rejected ___________
+backend\tests\conftest.py:106: in enforce_isolation
+    assert len(_violations) == previous_count, "Isolation violations (even if swallowed): " + repr(_violations[previous_count:])
+E   AssertionError: Isolation violations (even if swallowed): ['Test attempted Telegram transport']
+E   assert 3 == 2
+E    +  where 3 = len(['Test attempted network access outside explicit local test endpoints', 'Test attempted operational DWX access', 'Test attempted Telegram transport'])
+=========================== short test summary info ===========================
+ERROR backend\tests\isolation_canaries.py::test_external_network_is_rejected
+ERROR backend\tests\isolation_canaries.py::test_operational_dwx_is_rejected
+ERROR backend\tests\isolation_canaries.py::test_telegram_transport_is_rejected
+3 passed, 3 errors in 1.68s

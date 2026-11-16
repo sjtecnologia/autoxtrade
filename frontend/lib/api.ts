@@ -245,7 +245,7 @@ export interface ImportAutogenResponse extends ImportSymbolsAllResponse {
 
 export interface EntryApproval {
   id: string
-  status: 'pending' | 'approved' | 'rejected' | 'executing' | 'executed' | 'failed'
+  status: 'pending' | 'approved' | 'rejected' | 'executing' | 'executed' | 'closed_partial' | 'failed'
   market: string
   symbol: string
   side: 'buy' | 'sell'
@@ -268,6 +268,15 @@ export interface EntryApproval {
   created_at: string
   expires_at: string
   updated_at?: string | null
+  resolution?: {
+    outcome: 'closed' | 'closed_partial'
+    requested_quantity: string
+    filled_quantity: string
+    unfilled_quantity: string
+    trade_id: number
+    close_operation_id: string
+    reason: string
+  } | null
   error?: string | null
 }
 

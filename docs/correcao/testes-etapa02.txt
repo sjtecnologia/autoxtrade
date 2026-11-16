@@ -1,0 +1,33 @@
+Etapa 02 - evidencias de verificacao
+Data: 2026-09-23
+
+Bloqueio de seguranca
+- backend/trading/safety.py permaneceu intacto.
+- Nenhuma conta, corretora, Telegram, ordem real, commit, push ou deploy foi conectado.
+
+Comandos obrigatorios
+- pytest backend/tests -q -rx --tb=short: NAO EXECUTADO. O Python disponivel nao possui o modulo pytest (ModuleNotFoundError: No module named pytest).
+- pytest backend/tests/unit/test_safety.py -q --tb=short: NAO EXECUTADO pelo mesmo bloqueio de ambiente; portanto nao e possivel afirmar os 31 passed.
+- pytest backend/tests/unit/test_regressions_pending.py -q --runxfail --tb=short: NAO EXECUTADO pelo mesmo bloqueio.
+- npm --prefix frontend run type-check: BLOQUEADO por politica de execucao do PowerShell (npm.ps1); frontend/node_modules existe e a tentativa foi registrada.
+- Validacao disponivel: compileall dos quatro arquivos Python alterados: PASS.
+- Diagnostico do editor nos arquivos alterados: sem erros.
+
+Testes novos adicionados
+- test_timeout_is_unknown_and_never_resent: F07, confirma estado UNKNOWN e um unico intent.
+- test_partial_fill_records_only_confirmed_quantity: F07, registra PARTIAL_FILL como pending com a quantidade preenchida.
+- test_forex_trade_uses_connector_context_only: contexto P0, confirma paper/mt5/FOREX/account_id do conector.
+- test_approval_claim_is_single_consumer: F08, ensaio concorrente de dois workers; um unico claim.
+- test_failed_protection_cannot_claim_close_without_execution: F02, removido o xfail strict.
+
+Resultado esperado apos disponibilizar pytest
+- F02, F07, F08 e contexto Forex devem ser executados com --runxfail.
+- Os numeros passed/failed/xfailed da suite completa permanecem pendentes por ausencia do runner.
+- As 14 falhas legadas, incluindo pandas-ta, nao foram alteradas.
+
+Relatorio de risco
+- A hipotese de duplicidade de aprovacao foi ensaiada com dois consumidores concorrentes e resolvida no caminho de producao por claim Redis Lua atomico.
+- Preenchimento parcial, timeout e falha de fechamento nao fazem reenvio cego nem marcam Trade como closed.
+- Etapa 03: protecao MT5/OCO sem abrir lado oposto, reconciliacao e orfaos.
+- Etapa 04: risco e dimensionamento.
+- Nao ha conclusao de rentabilidade ou aptidao para dinheiro real; execucao externa continua bloqueada ate validacao final.

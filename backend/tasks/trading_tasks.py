@@ -578,6 +578,15 @@ async def _process_entry_approvals_async() -> None:
                             )
                         ).scalar_one_or_none()
                         await db.commit()
+                    if (existing_trade is not None and existing_trade.status == "closed"
+                            and is_durable_paper_position(existing_trade.position_id)):
+                        completed = await svc.mark_entry_executed(approval_id, claim_token)
+                        if completed is None:
+                            logger.error("[didi] Aprovação %s: fechamento ainda não comprovado", approval_id)
+                        else:
+                            logger.info("[didi] Aprovação %s reconciliada com posição encerrada: %s",
+                                        approval_id, completed["status"])
+                        continue
                     if (existing_trade is not None
                             and not is_durable_paper_position(existing_trade.position_id)
                             and not is_durable_paper_position(intent_position_id)):
@@ -822,7 +831,8 @@ async def _process_entry_approvals_async() -> None:
                     )
                     continue
                 try:
-                    await notifier.send_message(format_position_opened(trade))
+                    if trade.status == "open":
+                        await notifier.send_message(format_position_opened(trade))
                 except Exception as notify_exc:
                     logger.error(
                         "[didi] Posição aberta, mas notificação falhou (%s): %s",
@@ -868,7 +878,8 @@ async def _process_entry_approvals_async() -> None:
                         )
                         if completed is not None:
                             try:
-                                await notifier.send_message(format_position_opened(trade))
+                                if trade.status == "open":
+                                    await notifier.send_message(format_position_opened(trade))
                             except Exception as notify_exc:
                                 logger.error(
                                     "[didi] Posição aberta, mas notificação falhou (%s): %s",
@@ -1101,6 +1112,27 @@ async def _monitor_paper_candles(
                     await db.rollback()
                     await notifier.send_emergency_alert(
                         f"[paper] Trade {trade_id}: proteção atual não confirmada; reserva preservada."
+                    )
+                    return
+
+            if durable:
+                from paper.entry_time import proven_entry_time
+                from paper.durable_effects import PaperEffectOperation
+                try:
+                    entry = await db.get(PaperEffectOperation, (
+                        effects._account_key, trade.position_id, "entry:" + trade.intent_id,
+                    ))
+                    if entry is None:
+                        raise ValueError("Recibo de entrada ausente")
+                    observed = await effects._entry_result(db, trade.intent_id, trade.position_id, entry.result)
+                    if trade.open_at != proven_entry_time(observed):
+                        raise ValueError("open_at diverge dos fills duráveis; reconciliação temporal necessária")
+                except (ValueError, KeyError, TypeError) as exc:
+                    await db.rollback()
+                    logger.error("[paper] Trade %s: histórico temporal bloqueado: %s", trade_id, exc)
+                    await notifier.send_emergency_alert(
+                        f"[paper] Trade {trade_id}: histórico temporal bloqueado; "
+                        "inspecione com python -m paper.entry_time --intent <intent_id>."
                     )
                     return
 
